@@ -1,0 +1,32 @@
+PASOS PARA SUBIR EL PROYECTO A GITHUB (WINDOWS + POWERSHELL)
+
+Repositorio remoto:
+https://github.com/SuraYulieth/Ruta-F-cil.git
+
+1) Abre PowerShell en la carpeta del proyecto:
+   cd "C:\Users\DERO\Documents\Universidad\Analisis de algoritmo\Trabajo final\Ruta-F-cil"
+
+2) Inicializa Git (solo la primera vez):
+   git init
+
+3) Configura rama principal y remoto (solo la primera vez):
+   git branch -M main
+   git remote add origin https://github.com/SuraYulieth/Ruta-F-cil.git
+
+   Si ya existe el remoto y quieres actualizarlo:
+   git remote set-url origin https://github.com/SuraYulieth/Ruta-F-cil.git
+
+4) Agrega cambios y crea commit:
+   git add .
+   git commit -m "Actualizacion del proyecto"
+
+5) Si el remoto tiene cambios que tu no tienes, integra primero:
+   git pull --rebase --allow-unrelated-histories origin main
+
+6) Sube al repositorio:
+   git push -u origin main
+
+Notas:
+- Si GitHub pide autenticacion, inicia sesion en el navegador o usa un token (PAT).
+- Si no hay cambios, Git dira: "nothing to commit".
+- Puedes automatizar todo ejecutando el archivo: subir_proyecto.sp1
