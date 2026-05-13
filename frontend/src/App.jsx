@@ -1,35 +1,59 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 
-// Mock Data
-const initialOrders = [
-  { id: 'ORD-1023', desc: 'Paquete pequeño - Electrónicos', status: 'pending', customer: 'David Restrepo', location: 'El Poblado' },
-  { id: 'ORD-1024', desc: 'Caja mediana - Ropa', status: 'pending', customer: 'Sura Rueda', location: 'Laureles' },
-  { id: 'ORD-1025', desc: 'Documentos urgentes', status: 'assigned', customer: 'Karen Rodriguez', location: 'Envigado', driver: 'Carlos M.' }
-];
-
-const nearbyDrivers = [
-  { id: 'DRV-01', name: 'Carlos M.', status: 'busy', distance: '1.2 km' },
-  { id: 'DRV-02', name: 'Ana G.', status: 'available', distance: '0.8 km' },
-  { id: 'DRV-03', name: 'Luis P.', status: 'available', distance: '3.5 km' },
-];
+const API_URL = 'http://localhost:8000/api';
 
 function App() {
-  const [orders, setOrders] = useState(initialOrders);
+  const [orders, setOrders] = useState([]);
+  const [nearbyDrivers, setNearbyDrivers] = useState([]);
   const [isAssigning, setIsAssigning] = useState(false);
 
-  const handleAssignOrders = () => {
+  const fetchData = async () => {
+    try {
+      const ordersRes = await fetch(`${API_URL}/pedidos/`);
+      const driversRes = await fetch(`${API_URL}/repartidores/`);
+      const ordersData = await ordersRes.json();
+      const driversData = await driversRes.json();
+      
+      setOrders(ordersData.map(o => ({
+        id: `ORD-${o.id}`,
+        desc: o.descripcion,
+        status: o.estado === 'pendiente' ? 'pending' : o.estado, // Map 'pendiente' to 'pending' for CSS
+        customer: o.cliente_nombre,
+        location: 'Medellín',
+        driver: o.repartidor_nombre
+      })));
+      
+      setNearbyDrivers(driversData.map(d => ({
+        id: `DRV-${d.id}`,
+        name: d.nombre,
+        status: d.estado,
+        distance: 'Localizado'
+      })));
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleAssignOrders = async () => {
     setIsAssigning(true);
-    // Simulate AI / Algorithm calculating nearest store and driver
-    setTimeout(() => {
-      setOrders(prev => prev.map(o => {
-        if (o.status === 'pending') {
-          return { ...o, status: 'assigned', driver: 'Ana G.' };
-        }
-        return o;
-      }));
+    try {
+      const response = await fetch(`${API_URL}/pedidos/asignar_automatico/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+      console.log(data.mensaje);
+      await fetchData(); // Refresh data
+    } catch (error) {
+      console.error("Error assigning orders:", error);
+    } finally {
       setIsAssigning(false);
-    }, 1500);
+    }
   };
 
   return (
