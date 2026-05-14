@@ -1,16 +1,24 @@
-# React + Vite
+# Frontend Ruta Facil
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Dashboard React + Vite para visualizacion de pedidos y repartidores.
 
-Currently, two official plugins are available:
+## Google Maps
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Este frontend usa `@react-google-maps/api` para mostrar mapa en vivo.
 
-## React Compiler
+1. Crea un archivo `.env` dentro de `frontend`.
+2. Agrega tu llave:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```env
+VITE_GOOGLE_MAPS_API_KEY=tu_api_key_aqui
+```
 
-## Expanding the ESLint configuration
+3. Asegura que la API key tenga habilitada la **Maps JavaScript API** en Google Cloud.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Si no existe una API key valida, el panel mostrara un mensaje de configuracion en lugar del mapa.
+
+## Scripts
+
+- `npm run dev`: entorno de desarrollo.
+- `npm run build`: build de produccion.
+- `npm run lint`: revisa lint.

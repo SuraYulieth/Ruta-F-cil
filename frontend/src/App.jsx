@@ -1,12 +1,23 @@
 import { useState, useEffect } from 'react';
+import { GoogleMap, MarkerF, PolylineF, useJsApiLoader } from '@react-google-maps/api';
 import './App.css';
 
 const API_URL = 'http://localhost:8000/api';
+const MAP_CENTER = { lat: 6.2442, lng: -75.5812 }; // Medellin
+const MAP_CONTAINER_STYLE = {
+  width: '100%',
+  height: '300px',
+  borderRadius: '12px'
+};
 
 function App() {
   const [orders, setOrders] = useState([]);
   const [nearbyDrivers, setNearbyDrivers] = useState([]);
   const [isAssigning, setIsAssigning] = useState(false);
+  const { isLoaded: isMapLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+  });
 
   const fetchData = async () => {
     try {
@@ -21,14 +32,23 @@ function App() {
         status: o.estado === 'pendiente' ? 'pending' : o.estado, // Map 'pendiente' to 'pending' for CSS
         customer: o.cliente_nombre,
         location: 'Medellín',
-        driver: o.repartidor_nombre
+        driver: o.repartidor_nombre,
+        customerCoords: (o.cliente_latitud && o.cliente_longitud)
+          ? { lat: Number(o.cliente_latitud), lng: Number(o.cliente_longitud) }
+          : null,
+        driverCoords: (o.repartidor_latitud_actual && o.repartidor_longitud_actual)
+          ? { lat: Number(o.repartidor_latitud_actual), lng: Number(o.repartidor_longitud_actual) }
+          : null
       })));
       
       setNearbyDrivers(driversData.map(d => ({
         id: `DRV-${d.id}`,
         name: d.nombre,
         status: d.estado,
-        distance: 'Localizado'
+        distance: 'Localizado',
+        coords: (d.latitud_actual && d.longitud_actual)
+          ? { lat: Number(d.latitud_actual), lng: Number(d.longitud_actual) }
+          : null
       })));
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -143,12 +163,64 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             {/* Map Simulator */}
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div className="map-placeholder">
-                <div className="map-grid"></div>
-                <div className="map-text">Simulación GPS en Vivo</div>
-                <div className="map-pin pin-store" title="Bodega Principal"></div>
-                <div className="map-pin pin-driver" title="Repartidor (Ana G.)"></div>
-                <div className="map-pin pin-customer" title="Destino Cliente"></div>
+              <div className="map-wrapper">
+                {!import.meta.env.VITE_GOOGLE_MAPS_API_KEY && (
+                  <div className="map-overlay-note">
+                    Configura VITE_GOOGLE_MAPS_API_KEY para habilitar el mapa.
+                  </div>
+                )}
+                {isMapLoaded && import.meta.env.VITE_GOOGLE_MAPS_API_KEY ? (
+                  <GoogleMap
+                    mapContainerStyle={MAP_CONTAINER_STYLE}
+                    center={MAP_CENTER}
+                    zoom={12}
+                    options={{
+                      disableDefaultUI: true,
+                      zoomControl: true,
+                      mapTypeControl: false,
+                      streetViewControl: false,
+                      fullscreenControl: false
+                    }}
+                  >
+                    <MarkerF position={MAP_CENTER} title="Centro logístico" />
+
+                    {nearbyDrivers
+                      .filter(driver => driver.coords)
+                      .map(driver => (
+                        <MarkerF
+                          key={driver.id}
+                          position={driver.coords}
+                          title={`Repartidor: ${driver.name}`}
+                        />
+                      ))}
+
+                    {orders
+                      .filter(order => order.customerCoords)
+                      .map(order => (
+                        <MarkerF
+                          key={`${order.id}-customer`}
+                          position={order.customerCoords}
+                          title={`Cliente: ${order.customer}`}
+                        />
+                      ))}
+
+                    {orders
+                      .filter(order => order.customerCoords && order.driverCoords)
+                      .map(order => (
+                        <PolylineF
+                          key={`${order.id}-path`}
+                          path={[order.driverCoords, order.customerCoords]}
+                          options={{
+                            strokeColor: '#3b82f6',
+                            strokeOpacity: 0.9,
+                            strokeWeight: 3
+                          }}
+                        />
+                      ))}
+                  </GoogleMap>
+                ) : (
+                  <div className="map-placeholder">Cargando mapa...</div>
+                )}
               </div>
             </div>
 

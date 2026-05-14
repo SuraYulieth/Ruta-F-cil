@@ -122,3 +122,6 @@ STATIC_URL = 'static/'
 
 # CORS configuration
 CORS_ALLOW_ALL_ORIGINS = True # In production, restrict this to the frontend URL
+
+# Use BigAutoField as default primary key type to match existing migrations.
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
