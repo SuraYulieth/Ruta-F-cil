@@ -745,6 +745,9 @@ class RouteOptimizerService:
         )
 
         for profile in queryset:
+            if not profile.disponible:
+                continue
+
             # Verificar que el usuario sea disponible (case-insensitive)
             if profile.user.estado.lower() != 'disponible':
                 continue

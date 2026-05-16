@@ -4,6 +4,11 @@ import { useAppContext } from '../context/AppContext';
 export const Sidebar = () => {
   const { currentUser, logout } = useAppContext();
   const navigate = useNavigate();
+  const userDisplayName = currentUser?.name
+    || currentUser?.nombre
+    || currentUser?.username
+    || currentUser?.email
+    || 'Usuario';
 
   const handleLogout = () => {
     logout();
@@ -33,15 +38,29 @@ export const Sidebar = () => {
         )}
         
         {currentUser?.role === 'driver' && (
-          <NavLink to="/driver/dashboard" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-            🛵 Mis Rutas
-          </NavLink>
+          <>
+            <NavLink to="/driver/dashboard" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              🛵 Resumen
+            </NavLink>
+            <NavLink to="/driver/orders" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              📦 Pedidos
+            </NavLink>
+            <NavLink to="/driver/map" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              🗺️ Mapa
+            </NavLink>
+            <NavLink to="/driver/availability" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              🚦 Disponibilidad
+            </NavLink>
+            <NavLink to="/driver/stats" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              📊 Estadísticas
+            </NavLink>
+          </>
         )}
       </nav>
 
       <div className="sidebar-footer">
         <div className="user-info">
-          <p className="user-name">{currentUser?.name}</p>
+          <p className="user-name">{userDisplayName}</p>
         </div>
         <button className="btn-logout" onClick={handleLogout}>
           🚪 Salir

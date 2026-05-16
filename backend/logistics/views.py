@@ -567,6 +567,7 @@ class DriverViewSet(viewsets.ViewSet):
     - POST /api/orders/{id}/complete/ - Completar pedido
     """
     permission_classes = [IsAuthenticated, IsDriver]
+    no_profile_message = 'Este usuario no tiene perfil de repartidor asociado.'
 
     def list(self, request):
         """Redirige a /drivers/me/"""
@@ -583,11 +584,11 @@ class DriverViewSet(viewsets.ViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Repartidor.DoesNotExist:
             return Response(
-                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                {"error": self.no_profile_message},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-    @action(detail=False, methods=['post'], url_path='toggle-availability')
+    @action(detail=False, methods=['post'], url_path='me/toggle-availability')
     def toggle_availability(self, request):
         """Cambiar disponibilidad del repartidor."""
         try:
@@ -605,9 +606,11 @@ class DriverViewSet(viewsets.ViewSet):
             repartidor.user.estado = 'Disponible' if disponible else 'No disponible'
             repartidor.user.save(update_fields=['estado'])
             
-            message = "Ahora estás disponible para recibir pedidos." if disponible else "Ya no estás disponible para recibir pedidos."
+            message = "Ahora estás disponible para recibir pedidos." if disponible else "Ahora estás no disponible."
             return Response(
                 {
+                    "available": disponible,
+                    "message": message,
                     "disponible": disponible,
                     "mensaje": message,
                     "repartidor": DriverDetailSerializer(repartidor).data
@@ -616,11 +619,11 @@ class DriverViewSet(viewsets.ViewSet):
             )
         except Repartidor.DoesNotExist:
             return Response(
-                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                {"error": self.no_profile_message},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-    @action(detail=False, methods=['get'], url_path='orders')
+    @action(detail=False, methods=['get'], url_path='me/orders')
     def my_orders(self, request):
         """Listar pedidos asignados al repartidor."""
         try:
@@ -649,11 +652,11 @@ class DriverViewSet(viewsets.ViewSet):
             )
         except Repartidor.DoesNotExist:
             return Response(
-                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                {"error": self.no_profile_message},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-    @action(detail=False, methods=['get'], url_path='routes')
+    @action(detail=False, methods=['get'], url_path='me/routes')
     def my_routes(self, request):
         """Listar rutas asignadas al repartidor."""
         try:
@@ -682,11 +685,11 @@ class DriverViewSet(viewsets.ViewSet):
             )
         except Repartidor.DoesNotExist:
             return Response(
-                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                {"error": self.no_profile_message},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-    @action(detail=False, methods=['post'], url_path='location')
+    @action(detail=False, methods=['post'], url_path='me/location')
     def update_location(self, request):
         """Actualizar ubicación del repartidor."""
         try:
@@ -717,11 +720,11 @@ class DriverViewSet(viewsets.ViewSet):
             )
         except Repartidor.DoesNotExist:
             return Response(
-                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                {"error": self.no_profile_message},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-    @action(detail=False, methods=['post'], url_path='orders/(?P<order_id>[0-9]+)/start')
+    @action(detail=False, methods=['post'], url_path='me/orders/(?P<order_id>[0-9]+)/start')
     def order_start(self, request, order_id=None):
         """Cambiar estado de pedido a 'En ruta'."""
         try:
@@ -753,7 +756,7 @@ class DriverViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-    @action(detail=False, methods=['post'], url_path='orders/(?P<order_id>[0-9]+)/deliver')
+    @action(detail=False, methods=['post'], url_path='me/orders/(?P<order_id>[0-9]+)/deliver')
     def order_deliver(self, request, order_id=None):
         """Cambiar estado de pedido a 'Entregado'."""
         try:
@@ -783,4 +786,34 @@ class DriverViewSet(viewsets.ViewSet):
             return Response(
                 {"error": "Pedido no encontrado o no asignado a ti"},
                 status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'], url_path='me/orders/(?P<order_id>[0-9]+)/complete')
+    def order_complete(self, request, order_id=None):
+        """Completar pedido (equivalente operativo a entrega final)."""
+        try:
+            order = Pedido.objects.get(id=order_id, repartidor=request.user)
+
+            if order.estado == 'Entregado':
+                return Response(
+                    {"mensaje": "El pedido ya fue completado"},
+                    status=status.HTTP_200_OK
+                )
+
+            order.estado = 'Entregado'
+            order.fecha_entrega = timezone.now()
+            order.save(update_fields=['estado', 'fecha_entrega'])
+            RutaParada.objects.filter(pedido=order).update(estado='completada')
+
+            return Response(
+                {
+                    "mensaje": "Pedido completado exitosamente",
+                    "pedido": DriverMyOrdersSerializer(order).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Pedido.DoesNotExist:
+            return Response(
+                {"error": "Pedido no encontrado o no asignado a ti"},
+                status=status.HTTP_404_NOT_FOUND,
             )

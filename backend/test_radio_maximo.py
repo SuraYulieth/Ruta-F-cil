@@ -35,10 +35,10 @@ class GeoSpatialHelpersTests(TestCase):
         """Prueba: distancia conocida entre Bogotá y Medellín."""
         # Bogotá: (4.7110, -74.0721)
         # Medellín: (6.2442, -75.5812)
-        # Distancia real: ~376 km
+        # Distancia en linea recta (haversine): ~239 km
         distance = haversine_calc(4.7110, -74.0721, 6.2442, -75.5812)
-        self.assertGreater(distance, 350)
-        self.assertLess(distance, 400)
+        self.assertGreater(distance, 220)
+        self.assertLess(distance, 260)
 
     def test_is_within_radius_true(self):
         """Prueba: punto dentro del radio retorna True."""

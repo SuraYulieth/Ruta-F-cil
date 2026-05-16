@@ -16,6 +16,16 @@ export const AdminDashboard = () => {
     loading,
   } = useAppContext();
 
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
+
+  const getOrderStatus = (order) => String(order?.status || order?.estado || 'Sin estado');
+  const getOrderCustomer = (order) => order?.customer || order?.cliente_nombre || order?.cliente?.nombre || 'Cliente sin nombre';
+  const getOrderDestination = (order) => order?.destination || order?.direccion || order?.cliente?.direccion || 'Direccion no disponible';
+  const getOrderWeight = (order) => order?.weightKg ?? order?.peso_total_kg ?? 0;
+  const getOrderPriority = (order) => order?.priority || order?.prioridad || 'normal';
+  const getOrderDriverId = (order) => order?.driverId || order?.repartidor_info?.id || order?.repartidor || null;
+
   const [isAssigning, setIsAssigning] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -32,12 +42,12 @@ export const AdminDashboard = () => {
   const isPendingOrder = (order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente';
   const isAssignedOrder = (order) => String(order.estado || order.status || '').toLowerCase() === 'asignado';
 
-  const drivers = getDrivers();
-  const pendingCount = orders.filter(isPendingOrder).length;
-  const availableCount = drivers.filter((driver) => driver.status === 'Disponible').length;
+  const drivers = Array.isArray(getDrivers?.()) ? getDrivers() : [];
+  const pendingCount = safeOrders.filter(isPendingOrder).length;
+  const availableCount = drivers.filter((driver) => String(driver?.status || driver?.estado || '').toLowerCase() === 'disponible').length;
 
-  const pendingOrders = orders.filter(isPendingOrder);
-  const assignedOrders = orders.filter(isAssignedOrder);
+  const pendingOrders = safeOrders.filter(isPendingOrder);
+  const assignedOrders = safeOrders.filter(isAssignedOrder);
 
   const handleOpenManualAssign = (order) => {
     setAssignmentError('');
@@ -138,8 +148,8 @@ export const AdminDashboard = () => {
 
       <main className="optimizer-grid">
         <PendingOrdersMap
-          orders={orders}
-          warehouses={warehouses}
+          orders={safeOrders}
+          warehouses={safeWarehouses}
           driverLocation={optimization?.optimizer?.start || driverLocation}
           selectedOrderIds={optimization?.optimizer?.pedidos_seleccionados || []}
           selectedWarehouseId={optimization?.optimizer?.aliado_id}
@@ -155,17 +165,17 @@ export const AdminDashboard = () => {
 
       <main className="main-grid mt-4">
         <section className="panel">
-          <h2>Pedidos activos <span className="count">{orders.length}</span></h2>
+          <h2>Pedidos activos <span className="count">{safeOrders.length}</span></h2>
           <div className="list-container">
-            {orders.map((order) => (
+            {safeOrders.map((order) => (
               <div key={order.id} className="card">
                 <div className="card-info">
-                  <h3>{order.customer}</h3>
-                  <p>{order.destination}</p>
-                  {order.driverId && <p>Repartidor ID: {order.driverId}</p>}
+                  <h3>{getOrderCustomer(order)}</h3>
+                  <p>{getOrderDestination(order)}</p>
+                  {getOrderDriverId(order) && <p>Repartidor ID: {getOrderDriverId(order)}</p>}
                 </div>
-                <div className={`badge ${(order.status || order.estado).toLowerCase().replace(' ', '-')}`}>
-                  {order.status || order.estado}
+                <div className={`badge ${getOrderStatus(order).toLowerCase().replace(' ', '-')}`}>
+                  {getOrderStatus(order)}
                 </div>
               </div>
             ))}
@@ -182,9 +192,9 @@ export const AdminDashboard = () => {
               pendingOrders.map((order) => (
                 <div key={order.id} className="card">
                   <div className="card-info">
-                    <h3>#{order.id} - {order.customer}</h3>
-                    <p>{order.destination}</p>
-                    <p>Peso: {order.weightKg} kg | Prioridad: {order.priority}</p>
+                    <h3>#{order.id} - {getOrderCustomer(order)}</h3>
+                    <p>{getOrderDestination(order)}</p>
+                    <p>Peso: {getOrderWeight(order)} kg | Prioridad: {getOrderPriority(order)}</p>
                   </div>
                   <div className="card-actions">
                     <button
@@ -210,12 +220,12 @@ export const AdminDashboard = () => {
               assignedOrders.map((order) => (
                 <div key={order.id} className="card">
                   <div className="card-info">
-                    <h3>#{order.id} - {order.customer}</h3>
-                    <p>{order.destination}</p>
-                    <p>Repartidor: {order.driverId || order.repartidor_info?.id || 'Asignado'}</p>
+                    <h3>#{order.id} - {getOrderCustomer(order)}</h3>
+                    <p>{getOrderDestination(order)}</p>
+                    <p>Repartidor: {getOrderDriverId(order) || 'Asignado'}</p>
                   </div>
                   <div className="badge asignado">
-                    {order.status || order.estado}
+                    {getOrderStatus(order)}
                   </div>
                 </div>
               ))
@@ -229,11 +239,11 @@ export const AdminDashboard = () => {
             {drivers.map((driver) => (
               <div key={driver.id} className="card">
                 <div className="card-info">
-                  <h3>{driver.name}</h3>
-                  <p>{driver.location}</p>
+                    <h3>{driver.name || driver.nombre || 'Repartidor'}</h3>
+                    <p>{driver.location || driver.ubicacion || 'Sin ubicacion'}</p>
                 </div>
-                <div className={`badge ${driver.status.toLowerCase()}`}>
-                  {driver.status}
+                <div className={`badge ${String(driver.status || driver.estado || 'sin estado').toLowerCase()}`}>
+                  {driver.status || driver.estado || 'Sin estado'}
                 </div>
               </div>
             ))}

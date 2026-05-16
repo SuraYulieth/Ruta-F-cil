@@ -1,8 +1,23 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { api } from '../services/api';
+import { api, tokenService } from '../services/api';
 
 const AppContext = createContext();
 
+const sessionService = {
+  setUser: (user) => localStorage.setItem('auth_user', JSON.stringify(user)),
+  getUser: () => {
+    const raw = localStorage.getItem('auth_user');
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+  clearUser: () => localStorage.removeItem('auth_user'),
+};
+
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAppContext = () => useContext(AppContext);
 
 export const AppProvider = ({ children }) => {
@@ -10,8 +25,20 @@ export const AppProvider = ({ children }) => {
   const [orders, setOrders] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [driverProfiles, setDriverProfiles] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => sessionService.getUser());
   const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState(() => tokenService.getToken());
+  const [driverProfile, setDriverProfile] = useState(null);
+  const [driverOrders, setDriverOrders] = useState([]);
+  const [driverRoutes, setDriverRoutes] = useState([]);
+  const [driverDashboardLoading, setDriverDashboardLoading] = useState(false);
+  const [driverDashboardError, setDriverDashboardError] = useState('');
+
+  const normalizeList = (value) => {
+    if (Array.isArray(value)) return value;
+    if (Array.isArray(value?.results)) return value.results;
+    return [];
+  };
 
   const fetchData = async () => {
     try {
@@ -22,10 +49,10 @@ export const AppProvider = ({ children }) => {
         api.getWarehouses(),
         api.getDrivers(),
       ]);
-      setUsers(usersData);
-      setOrders(ordersData);
-      setWarehouses(warehousesData);
-      setDriverProfiles(driverProfilesData);
+      setUsers(normalizeList(usersData));
+      setOrders(normalizeList(ordersData));
+      setWarehouses(normalizeList(warehousesData));
+      setDriverProfiles(normalizeList(driverProfilesData));
     } catch (error) {
       console.error('Error al cargar datos del backend:', error);
     } finally {
@@ -37,10 +64,10 @@ export const AppProvider = ({ children }) => {
     try {
       setLoading(true);
       const data = await api.refreshImportedData();
-      setUsers(data.users);
-      setOrders(data.orders);
-      setWarehouses(data.warehouses);
-      setDriverProfiles(data.drivers);
+      setUsers(normalizeList(data.users));
+      setOrders(normalizeList(data.orders));
+      setWarehouses(normalizeList(data.warehouses));
+      setDriverProfiles(normalizeList(data.drivers));
       return data;
     } finally {
       setLoading(false);
@@ -48,13 +75,32 @@ export const AppProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!token || currentUser?.role !== 'driver') return;
+    loadDriverDashboard().catch(() => {
+      // El error ya se gestiona en estado de contexto para mostrar en UI.
+    });
+  }, [token, currentUser?.role]);
 
   const login = async (username, password) => {
     try {
       const userData = await api.login(username, password);
+      
+      // Guardar token si viene en la respuesta
+      if (userData.token) {
+        tokenService.setToken(userData.token);
+        setToken(userData.token);
+      }
+      
       setCurrentUser(userData);
+      sessionService.setUser(userData);
+      if (userData.role === 'driver') {
+        await loadDriverDashboard();
+      }
       return true;
     } catch (error) {
       console.error('Error en el login:', error);
@@ -64,6 +110,104 @@ export const AppProvider = ({ children }) => {
 
   const logout = () => {
     setCurrentUser(null);
+    setToken(null);
+    tokenService.clearToken();
+    sessionService.clearUser();
+    setDriverProfile(null);
+    setDriverOrders([]);
+    setDriverRoutes([]);
+    setDriverDashboardError('');
+  };
+
+  const loadDriverDashboard = async () => {
+    try {
+      setDriverDashboardLoading(true);
+      setDriverDashboardError('');
+      const [profileData, ordersData, routesData] = await Promise.all([
+        api.getDriverProfile(),
+        api.getDriverOrders(),
+        api.getDriverRoutes(),
+      ]);
+      setDriverProfile(profileData || null);
+      setDriverOrders(ordersData?.pedidos || []);
+      setDriverRoutes(routesData?.rutas || []);
+      return { profile: profileData, orders: ordersData?.pedidos || [], routes: routesData?.rutas || [] };
+    } catch (error) {
+      const message = error?.message || 'No se pudo cargar el panel del repartidor.';
+      setDriverDashboardError(message);
+      setDriverProfile(null);
+      setDriverOrders([]);
+      setDriverRoutes([]);
+      throw error;
+    } finally {
+      setDriverDashboardLoading(false);
+    }
+  };
+
+  const toggleAvailability = async () => {
+    const previousProfile = driverProfile;
+    const nextState = !driverProfile?.disponible;
+
+    // Optimistic update para reflejar inmediatamente el cambio en UI
+    if (driverProfile) {
+      setDriverProfile({
+        ...driverProfile,
+        disponible: nextState,
+        estado: nextState ? 'Disponible' : 'No disponible',
+      });
+    }
+
+    try {
+      const response = await api.toggleDriverAvailability(nextState);
+      const available = typeof response?.available === 'boolean' ? response.available : response?.disponible;
+      const serverProfile = response?.repartidor || null;
+
+      if (serverProfile) {
+        setDriverProfile(serverProfile);
+      } else if (typeof available === 'boolean' && driverProfile) {
+        setDriverProfile({
+          ...driverProfile,
+          disponible: available,
+          estado: available ? 'Disponible' : 'No disponible',
+        });
+      }
+
+      return {
+        ...response,
+        available,
+        message: response?.message || response?.mensaje || 'Disponibilidad actualizada correctamente.',
+      };
+    } catch (error) {
+      // Rollback en caso de falla
+      setDriverProfile(previousProfile);
+      throw error;
+    }
+  };
+
+  const updateDriverLocation = async (latitud, longitud) => {
+    const response = await api.updateDriverLocation(latitud, longitud);
+    if (response?.repartidor) {
+      setDriverProfile(response.repartidor);
+    }
+    return response;
+  };
+
+  const startOrder = async (orderId) => {
+    const response = await api.startDriverOrder(orderId);
+    await loadDriverDashboard();
+    return response;
+  };
+
+  const deliverOrder = async (orderId, comentarios = '') => {
+    const response = await api.deliverDriverOrder(orderId, comentarios);
+    await loadDriverDashboard();
+    return response;
+  };
+
+  const completeOrder = async (orderId) => {
+    const response = await api.completeDriverOrder(orderId);
+    await loadDriverDashboard();
+    return response;
   };
 
   const addOrder = async (orderData) => {
@@ -99,7 +243,7 @@ export const AppProvider = ({ children }) => {
     return createdDriver;
   };
 
-  const getDrivers = () => users.filter((user) => user.role === 'driver');
+  const getDrivers = () => normalizeList(users).filter((user) => user.role === 'driver');
 
   const updateOrderStatus = async (orderId, nextStatus) => {
     try {
@@ -178,9 +322,21 @@ export const AppProvider = ({ children }) => {
       warehouses,
       driverProfiles,
       currentUser,
+      token,
       loading,
+      driverProfile,
+      driverOrders,
+      driverRoutes,
+      driverDashboardLoading,
+      driverDashboardError,
       login,
       logout,
+      loadDriverDashboard,
+      toggleAvailability,
+      updateDriverLocation,
+      startOrder,
+      deliverOrder,
+      completeOrder,
       addOrder,
       addUser,
       addWarehouse,

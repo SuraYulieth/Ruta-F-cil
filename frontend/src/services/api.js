@@ -12,6 +12,34 @@ const apiPath = (path) => `${API_BASE_URL}${path}`;
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
+// ============ TOKEN MANAGEMENT ============
+export const tokenService = {
+  setToken: (token) => {
+    if (token) {
+      localStorage.setItem('auth_token', token);
+    }
+  },
+  
+  getToken: () => localStorage.getItem('auth_token'),
+  
+  clearToken: () => {
+    localStorage.removeItem('auth_token');
+  },
+  
+  hasToken: () => !!localStorage.getItem('auth_token'),
+};
+
+const getAuthHeaders = () => {
+  const token = tokenService.getToken();
+  const headers = { ...jsonHeaders };
+  
+  if (token) {
+    headers['Authorization'] = `Token ${token}`;
+  }
+  
+  return headers;
+};
+
 const getErrorMessage = (payload) => {
   if (!payload) return null;
   if (typeof payload === 'string') return payload;
@@ -31,7 +59,14 @@ const getErrorMessage = (payload) => {
 };
 
 async function request(path, options = {}) {
-  const headers = options.body instanceof FormData ? {} : jsonHeaders;
+  const isFormData = options.body instanceof FormData;
+  const headers = isFormData ? getAuthHeaders() : { ...getAuthHeaders() };
+  
+  // No override Content-Type para FormData (el navegador lo hace automáticamente)
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  
   const response = await fetch(apiPath(path), {
     headers,
     ...options,
@@ -49,6 +84,41 @@ export const api = {
   getOrders: () => request('/pedidos/'),
   getWarehouses: () => request('/aliados/'),
   getDrivers: () => request('/repartidores/'),
+  
+  // ============ DRIVER ENDPOINTS (Token Auth Required) ============
+  getDriverProfile: () => request('/drivers/me/'),
+  toggleDriverAvailability: (disponible) => request('/drivers/me/toggle-availability/', {
+    method: 'POST',
+    body: JSON.stringify({ disponible }),
+  }),
+  getDriverOrders: (estado) => request(`/drivers/me/orders/${estado ? `?estado=${encodeURIComponent(estado)}` : ''}`, {
+    method: 'GET',
+  }),
+  getDriverRoutes: (estado_ruta) => request(`/drivers/me/routes/${estado_ruta ? `?estado_ruta=${encodeURIComponent(estado_ruta)}` : ''}`, {
+    method: 'GET',
+  }),
+  updateDriverLocation: (latitud, longitud) => request('/drivers/me/location/', {
+    method: 'POST',
+    body: JSON.stringify({ latitud, longitud }),
+  }),
+  startDriverOrder: (orderId) => request(`/drivers/me/orders/${orderId}/start/`, {
+    method: 'POST',
+  }),
+  deliverDriverOrder: (orderId, comentarios) => request(`/drivers/me/orders/${orderId}/deliver/`, {
+    method: 'POST',
+    body: JSON.stringify({ comentarios }),
+  }),
+  completeDriverOrder: (orderId) => request(`/drivers/me/orders/${orderId}/complete/`, {
+    method: 'POST',
+  }),
+  // Compat aliases used by existing components
+  getMyDriverInfo: () => api.getDriverProfile(),
+  getMyOrders: (estado) => api.getDriverOrders(estado),
+  getMyRoutes: (estado_ruta) => api.getDriverRoutes(estado_ruta),
+  updateMyLocation: (latitud, longitud) => api.updateDriverLocation(latitud, longitud),
+  startOrder: (orderId) => api.startDriverOrder(orderId),
+  deliverOrder: (orderId, comentarios) => api.deliverDriverOrder(orderId, comentarios),
+  completeOrder: (orderId) => api.completeDriverOrder(orderId),
   refreshImportedData: () => Promise.all([
     api.getUsers(),
     api.getOrders(),

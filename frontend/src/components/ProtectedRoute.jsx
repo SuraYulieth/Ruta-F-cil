@@ -2,9 +2,10 @@ import { Navigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 
 export const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { currentUser } = useAppContext();
+  const { currentUser, token } = useAppContext();
 
-  if (!currentUser) {
+  // Si no hay token ni usuario, redirigir al login
+  if (!token || !currentUser) {
     return <Navigate to="/login" replace />;
   }
 
