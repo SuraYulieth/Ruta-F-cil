@@ -14,6 +14,9 @@ SHEET_ALIASES = {
     'drivers': 'repartidores',
     'clientes': 'clientes',
     'pedidos': 'pedidos',
+    'datos_rutas': 'pedidos',
+    'datos_de_rutas': 'pedidos',
+    'rutas': 'pedidos',
 }
 
 
@@ -122,12 +125,9 @@ def _sheet_type(title, first_row):
 def _missing_required_columns(sheet_type, row):
     required_groups = {
         'pedidos': [
-            ('cliente', {'cliente'}),
-            ('direccion', {'direccion'}),
-            ('latitud', {'latitud', 'latitude'}),
-            ('longitud', {'longitud', 'longitude'}),
-            ('prioridad', {'prioridad', 'priority'}),
-            ('peso_total_kg', {'peso_total_kg', 'peso', 'weightkg'}),
+            ('direccion', {'direccion', 'direccion_entrega', 'destination', 'address', 'destino'}),
+            ('latitud', {'latitud', 'latitude', 'lat', 'lat_destino'}),
+            ('longitud', {'longitud', 'longitude', 'lng', 'lon', 'long', 'long_destino'}),
         ],
     }.get(sheet_type, [])
     if not required_groups:
@@ -173,10 +173,10 @@ def _import_cliente(row, result):
 
 
 def _import_pedido(row, result):
-    lat = _decimal(row, 'latitud', 'latitude')
-    lng = _decimal(row, 'longitud', 'longitude')
+    lat = _decimal(row, 'latitud', 'latitude', 'lat', 'lat_destino')
+    lng = _decimal(row, 'longitud', 'longitude', 'lng', 'lon', 'long', 'long_destino')
     _validate_coordinates(lat, lng)
-    weight = _decimal(row, 'peso_total_kg', 'peso', 'weightkg', default=0) or Decimal('0')
+    weight = _decimal(row, 'peso_total_kg', 'peso', 'weightkg', 'peso_kg', 'demanda_kg', default=0) or Decimal('0')
     if weight < 0:
         raise ValueError('El peso_total_kg no puede ser negativo.')
 
@@ -212,15 +212,15 @@ def _upsert_user(username, nombre, role, estado='Disponible'):
 
 
 def _upsert_cliente(row):
-    nombre = _value(row, 'cliente', 'cliente_nombre', 'nombre', 'name', default='Cliente sin nombre')
-    direccion = _value(row, 'direccion', 'destination', 'address', default='Sin direccion')
+    nombre = _value(row, 'cliente', 'cliente_nombre', 'nombre', 'name', 'destinatario', default='Cliente sin nombre')
+    direccion = _value(row, 'direccion', 'direccion_entrega', 'destination', 'address', 'destino', default='Sin direccion')
     cliente = Cliente.objects.filter(nombre=nombre, direccion=direccion).first()
     defaults = {
         'correo': _value(row, 'correo', 'email', default=None),
         'telefono': _value(row, 'telefono', 'phone', default=None),
         'direccion': direccion,
         'latitud': _decimal(row, 'latitud', 'latitude'),
-        'longitud': _decimal(row, 'longitud', 'longitude'),
+        'longitud': _decimal(row, 'longitud', 'longitude', 'lng', 'lon', 'long'),
     }
     if cliente:
         for key, value in defaults.items():

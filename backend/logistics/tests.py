@@ -406,6 +406,35 @@ class ImportExcelCommandTests(TestCase):
         self.assertEqual(Pedido.objects.get(cliente__nombre='Cliente 00001').prioridad, 'urgente')
         self.assertEqual(Pedido.objects.get(cliente__nombre='Cliente 00002').prioridad, 'baja')
 
+    def test_import_excel_accepts_datos_rutas_sheet_and_ignores_resumen(self):
+        workbook = Workbook()
+        datos_rutas = workbook.active
+        datos_rutas.title = 'datos_rutas'
+        datos_rutas.append(['destinatario', 'destino', 'lat', 'lng', 'peso_kg'])
+        datos_rutas.append(['Cliente Ruta 1', 'Calle 10 # 20-30', 4.73, -74.08, 3.5])
+
+        resumen = workbook.create_sheet('resumen')
+        resumen.append(['kpi', 'valor'])
+        resumen.append(['total', 1])
+
+        with TemporaryDirectory() as directory:
+            file_path = Path(directory) / 'datos_rutas.xlsx'
+            workbook.save(file_path)
+            upload = SimpleUploadedFile(
+                'datos_rutas.xlsx',
+                file_path.read_bytes(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+
+        response = self.client.post('/api/import-excel/', {'file': upload}, format='multipart')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['created']['pedidos'], 1)
+        self.assertEqual(response.data['created']['clientes'], 1)
+        self.assertIn('Hoja ignorada: resumen', response.data['warnings'])
+        self.assertEqual(Pedido.objects.count(), 1)
+        self.assertEqual(Cliente.objects.count(), 1)
+
 
 class DriverApiTests(TestCase):
     def setUp(self):
