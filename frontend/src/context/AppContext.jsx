@@ -96,6 +96,9 @@ export const AppProvider = ({ children }) => {
   };
 
   const optimizeRoute = async (payload) => api.optimizeRoute(payload);
+  const getPendingOrders = async () => api.getPendingOrders();
+  const getRoute = async (routeId) => api.getRoute(routeId);
+  const updateRouteStatus = async (routeId, status) => api.updateRouteStatus(routeId, status);
 
   const assignOptimizedRoute = async (routeId) => {
     const route = await api.assignRoute(routeId);
@@ -118,7 +121,10 @@ export const AppProvider = ({ children }) => {
       updateDriverStatus,
       assignOrders,
       optimizeRoute,
+      getPendingOrders,
+      getRoute,
       assignOptimizedRoute,
+      updateRouteStatus,
       refreshData: fetchData,
     }}>
       {children}

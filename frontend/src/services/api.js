@@ -1,9 +1,19 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+const RAW_API_BASE_URL = (
+  import.meta.env.VITE_API_URL
+  || import.meta.env.VITE_API_BASE_URL
+  || 'http://127.0.0.1:8000'
+).replace(/\/$/, '');
+
+const API_BASE_URL = RAW_API_BASE_URL.endsWith('/api')
+  ? RAW_API_BASE_URL
+  : `${RAW_API_BASE_URL}/api`;
+
+const apiPath = (path) => `${API_BASE_URL}${path}`;
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(apiPath(path), {
     headers: jsonHeaders,
     ...options,
   });
@@ -18,6 +28,9 @@ async function request(path, options = {}) {
 export const api = {
   getUsers: () => request('/users/'),
   getOrders: () => request('/pedidos/'),
+  getPendingOrders: () => request('/pedidos/').then((orders) => (
+    orders.filter((order) => order.status === 'Pendiente' || order.estado === 'Pendiente')
+  )),
   login: (username, password) => request('/login/', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
@@ -41,15 +54,27 @@ export const api = {
   autoAssignOrders: () => request('/pedidos/asignar_automatico/', {
     method: 'POST',
   }),
-  optimizeRoute: (payload) => request('/routes/optimize/', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }),
+  optimizeRoute: (payload) => {
+    const normalizedPayload = {
+      repartidor_id: payload.repartidor_id,
+      latitud_inicial: payload.latitud_inicial ?? payload.latitud_inicio,
+      longitud_inicial: payload.longitud_inicial ?? payload.longitud_inicio,
+      pedidos_candidatos: payload.pedidos_candidatos,
+      capacidad_maxima: payload.capacidad_maxima ?? payload.capacidad_maxima_kg,
+      reglas_negocio: payload.reglas_negocio,
+    };
+
+    return request('/routes/optimize/', {
+      method: 'POST',
+      body: JSON.stringify(normalizedPayload),
+    });
+  },
+  getRoute: (routeId) => request(`/routes/${routeId}/`),
   assignRoute: (routeId) => request(`/routes/${routeId}/assign/`, {
     method: 'POST',
   }),
-  updateRouteStatus: (routeId, estadoRuta) => request(`/routes/${routeId}/status/`, {
+  updateRouteStatus: (routeId, status) => request(`/routes/${routeId}/status/`, {
     method: 'PATCH',
-    body: JSON.stringify({ estado_ruta: estadoRuta }),
+    body: JSON.stringify({ estado_ruta: status }),
   }),
 };

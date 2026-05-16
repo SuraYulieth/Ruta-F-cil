@@ -7,6 +7,7 @@ export const AdminDashboard = () => {
   const { orders, getDrivers, assignOrders } = useAppContext();
   const [isAssigning, setIsAssigning] = useState(false);
   const [optimization, setOptimization] = useState(null);
+  const [driverLocation, setDriverLocation] = useState({ lat: 4.7110, lng: -74.0721 });
 
   const drivers = getDrivers();
   const pendingCount = orders.filter((order) => order.status === 'Pendiente' || order.estado === 'Pendiente').length;
@@ -28,10 +29,15 @@ export const AdminDashboard = () => {
       <main className="optimizer-grid">
         <PendingOrdersMap
           orders={orders}
+          driverLocation={optimization?.optimizer?.start || driverLocation}
           selectedOrderIds={optimization?.optimizer?.pedidos_seleccionados || []}
           routeGeometry={optimization?.optimizer?.geometria}
+          routeStops={optimization?.route?.paradas || []}
         />
-        <RouteOptimizerPanel onOptimized={setOptimization} />
+        <RouteOptimizerPanel
+          onDriverLocationChange={setDriverLocation}
+          onOptimized={setOptimization}
+        />
       </main>
 
       <main className="main-grid mt-4">
