@@ -1,3 +1,7 @@
+cd C:\Users\suray\OneDrive\Escritorio\Ruta-F-cil\backend
+C:\Users\suray\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe run_with_vendor.py migrate
+C:\Users\suray\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe run_with_vendor.py runserver 8000 --noreload
+
 cd frontend
 npm install
 npm run dev
