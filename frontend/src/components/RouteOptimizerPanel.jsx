@@ -164,14 +164,14 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
           </select>
         </label>
 
-        {hiddenDrivers.length > 0 && (
+        {/* {hiddenDrivers.length > 0 && (
           <details className="optimizer-driver-debug">
             <summary>Ver diagnostico tecnico</summary>
             {hiddenDrivers.slice(0, 3).map((driver) => (
               <p key={driver.id}>{driver.name}: {driver.reason}</p>
             ))}
           </details>
-        )}
+        )} */}
 
         <label>
           Latitud inicial

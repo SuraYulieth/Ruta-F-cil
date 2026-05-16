@@ -100,14 +100,14 @@ export const ManualAssignModal = ({
                 No hay repartidores disponibles. Los repartidores deshabilitados no pueden recibir pedidos.
               </p>
             )}
-            {hiddenDrivers.length > 0 && (
+            {/* {hiddenDrivers.length > 0 && (
               <details className="driver-diagnostics">
                 <summary>Ver diagnostico tecnico</summary>
                 {hiddenDrivers.map((driver) => (
                   <p key={driver.id}>{driver.name}: {driver.reason}</p>
                 ))}
               </details>
-            )}
+            )} */}
           </div>
 
           {error && <div className="error-message">{error}</div>}

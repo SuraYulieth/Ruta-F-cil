@@ -326,7 +326,7 @@ export const AdminDashboard = () => {
             })}
           </div>
 
-          {drivers.length > 0 && (
+          {/* {drivers.length > 0 && (
             <details className="technical-diagnostics">
               <summary>Ver diagnostico tecnico</summary>
               {drivers.map((driver) => {
@@ -339,7 +339,7 @@ export const AdminDashboard = () => {
                 );
               })}
             </details>
-          )}
+          )} */}
 
           <div className="actions">
             <button
