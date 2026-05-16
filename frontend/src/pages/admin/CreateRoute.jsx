@@ -14,6 +14,7 @@ export const CreateRoute = () => {
   });
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [warningMsg, setWarningMsg] = useState('');
 
   const updateField = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -22,9 +23,13 @@ export const CreateRoute = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setErrorMsg('');
-    if (!form.destination || !form.latitude || !form.longitude) {
-      setErrorMsg('Selecciona una direccion valida para autocompletar latitud y longitud.');
+    setWarningMsg('');
+    if (!form.destination) {
+      setErrorMsg('La direccion de destino es obligatoria.');
       return;
+    }
+    if (!form.latitude || !form.longitude) {
+      setWarningMsg('El pedido se guardara sin coordenadas. Para verlo en mapa y optimizarlo, selecciona una sugerencia de Google Maps despues.');
     }
     try {
       await addOrder({
@@ -58,6 +63,7 @@ export const CreateRoute = () => {
       <section className="panel form-panel">
         <form onSubmit={handleSubmit} className="custom-form">
           {successMsg && <div className="success-message">{successMsg}</div>}
+          {warningMsg && <div className="warning-message">{warningMsg}</div>}
           {errorMsg && <div className="error-message">{errorMsg}</div>}
 
           <div className="form-group">
@@ -76,10 +82,20 @@ export const CreateRoute = () => {
             value={form.destination}
             latitude={form.latitude}
             longitude={form.longitude}
-            onChange={({ address, lat, lng }) => {
-              updateField('destination', address);
-              updateField('latitude', lat ?? '');
-              updateField('longitude', lng ?? '');
+            onAddressChange={(address) => {
+              setForm((current) => ({
+                ...current,
+                destination: address,
+                latitude: '',
+                longitude: '',
+              }));
+            }}
+            onLocationChange={({ lat, lng }) => {
+              setForm((current) => ({
+                ...current,
+                latitude: lat,
+                longitude: lng,
+              }));
             }}
           />
 

@@ -54,7 +54,7 @@ class AliadoSerializer(serializers.ModelSerializer):
         lng = attrs.get('longitud', getattr(self.instance, 'longitud', None))
         if not direccion:
             raise serializers.ValidationError({'direccion': 'La direccion de la bodega es obligatoria.'})
-        validate_lat_lng(lat, lng, required=True)
+        validate_lat_lng(lat, lng, required=False)
         return attrs
 
 
@@ -74,7 +74,7 @@ class RepartidorSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         lat = attrs.get('latitud_actual', getattr(self.instance, 'latitud_actual', None))
         lng = attrs.get('longitud_actual', getattr(self.instance, 'longitud_actual', None))
-        validate_lat_lng(lat, lng, required=True)
+        validate_lat_lng(lat, lng, required=False)
         capacity = attrs.get('capacidad_maxima_kg')
         if capacity is not None and capacity <= 0:
             raise serializers.ValidationError({'capacidad_maxima_kg': 'La capacidad debe ser mayor que cero.'})
@@ -92,7 +92,7 @@ class ClienteSerializer(serializers.ModelSerializer):
         lng = attrs.get('longitud', getattr(self.instance, 'longitud', None))
         if not direccion:
             raise serializers.ValidationError({'direccion': 'La direccion del cliente es obligatoria.'})
-        validate_lat_lng(lat, lng, required=True)
+        validate_lat_lng(lat, lng, required=False)
         return attrs
 
 
@@ -152,7 +152,7 @@ class PedidoSerializer(serializers.ModelSerializer):
         direccion_cliente = cliente_data.get('direccion', 'Direccion no especificada')
         latitud_cliente = cliente_data.get('latitud')
         longitud_cliente = cliente_data.get('longitud')
-        validate_lat_lng(latitud_cliente, longitud_cliente, required=True)
+        validate_lat_lng(latitud_cliente, longitud_cliente, required=False)
 
         cliente, created = Cliente.objects.get_or_create(
             nombre=nombre_cliente,

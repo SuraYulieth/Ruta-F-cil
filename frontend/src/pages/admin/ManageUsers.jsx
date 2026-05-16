@@ -15,6 +15,7 @@ export const ManageUsers = () => {
   const [longitude, setLongitude] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [warningMsg, setWarningMsg] = useState('');
 
   const resetLocationFields = () => {
     setPhone('');
@@ -28,21 +29,25 @@ export const ManageUsers = () => {
     event.preventDefault();
     setSuccessMsg('');
     setErrorMsg('');
+    setWarningMsg('');
 
     try {
-      if ((role === 'driver' || role === 'aliado') && (!address || !latitude || !longitude)) {
-        setErrorMsg('Selecciona una direccion valida para guardar coordenadas.');
+      if ((role === 'driver' || role === 'aliado') && !address) {
+        setErrorMsg('La direccion es obligatoria para repartidores y bodegas.');
         return;
       }
+      if ((role === 'driver' || role === 'aliado') && (!latitude || !longitude)) {
+        setWarningMsg('Se guardara la direccion sin coordenadas. No aparecera correctamente en mapa hasta seleccionar una sugerencia valida.');
+      }
 
-      const createdUser = await addUser({ nombre: name, username, password, role });
+      const createdUser = await addUser({ nombre: name, username, password, role, ubicacion: address || undefined });
 
       if (role === 'aliado') {
         await addWarehouse({
           user: createdUser.id,
           direccion: address,
-          latitud: Number(latitude),
-          longitud: Number(longitude),
+          latitud: latitude ? Number(latitude) : null,
+          longitud: longitude ? Number(longitude) : null,
         });
       }
 
@@ -50,8 +55,8 @@ export const ManageUsers = () => {
         await addDriverProfile({
           user: createdUser.id,
           telefono: phone,
-          latitud_actual: Number(latitude),
-          longitud_actual: Number(longitude),
+          latitud_actual: latitude ? Number(latitude) : null,
+          longitud_actual: longitude ? Number(longitude) : null,
           capacidad_maxima_kg: Number(capacity || 15),
         });
       }
@@ -79,6 +84,7 @@ export const ManageUsers = () => {
           <h2>Crear Nuevo Usuario</h2>
           <form onSubmit={handleSubmit} className="custom-form">
             {successMsg && <div className="success-message">{successMsg}</div>}
+            {warningMsg && <div className="warning-message">{warningMsg}</div>}
             {errorMsg && <div className="error-message">{errorMsg}</div>}
 
             <div className="form-group">
@@ -133,10 +139,14 @@ export const ManageUsers = () => {
                 value={address}
                 latitude={latitude}
                 longitude={longitude}
-                onChange={({ address: nextAddress, lat, lng }) => {
+                onAddressChange={(nextAddress) => {
                   setAddress(nextAddress);
-                  setLatitude(lat ?? '');
-                  setLongitude(lng ?? '');
+                  setLatitude('');
+                  setLongitude('');
+                }}
+                onLocationChange={({ lat, lng }) => {
+                  setLatitude(lat);
+                  setLongitude(lng);
                 }}
               />
             )}

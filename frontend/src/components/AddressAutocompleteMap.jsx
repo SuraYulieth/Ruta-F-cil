@@ -1,5 +1,5 @@
 import { Autocomplete, GoogleMap, MarkerF, useJsApiLoader } from '@react-google-maps/api';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 const GOOGLE_MAPS_LIBRARIES = ['places'];
 const DEFAULT_CENTER = { lat: 6.2442, lng: -75.5812 };
@@ -28,12 +28,12 @@ export const AddressAutocompleteMap = ({
   value,
   latitude,
   longitude,
+  onAddressChange,
+  onLocationChange,
   onChange,
   required = true,
 }) => {
   const autocompleteRef = useRef(null);
-  const geocodeTimerRef = useRef(null);
-  const lastSelectedAddressRef = useRef('');
   const [statusMessage, setStatusMessage] = useState('');
 
   const apiKey = getGoogleMapsApiKey();
@@ -42,6 +42,8 @@ export const AddressAutocompleteMap = ({
     googleMapsApiKey: apiKey || '',
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
+
+  const addressValue = value || '';
 
   const markerPosition = useMemo(() => {
     const lat = toNumber(latitude);
@@ -52,97 +54,82 @@ export const AddressAutocompleteMap = ({
 
   const center = markerPosition || DEFAULT_CENTER;
 
-  useEffect(() => () => {
-    if (geocodeTimerRef.current) {
-      clearTimeout(geocodeTimerRef.current);
-    }
-  }, []);
+  const emitAddress = (nextAddress) => {
+    onAddressChange?.(nextAddress);
+  };
 
-  const updateAddress = (nextAddress) => {
-    onChange?.({ address: nextAddress, lat: latitude, lng: longitude });
+  const emitLocation = (nextLocation) => {
+    onLocationChange?.(nextLocation);
+  };
 
-    if (!isLoaded || !window.google || nextAddress.trim().length < 8) return;
-    if (nextAddress === lastSelectedAddressRef.current) return;
-
-    if (geocodeTimerRef.current) {
-      clearTimeout(geocodeTimerRef.current);
-    }
-
-    geocodeTimerRef.current = setTimeout(() => {
-      setStatusMessage('Buscando direccion...');
-      const geocoder = new window.google.maps.Geocoder();
-      geocoder.geocode(
-        {
-          address: `${nextAddress}, Colombia`,
-          componentRestrictions: { country: 'CO' },
-        },
-        (results, status) => {
-          if (status === 'OK' && results?.[0]?.geometry?.location) {
-            const place = results[0];
-            const location = place.geometry.location;
-            const resolvedAddress = place.formatted_address || nextAddress;
-            lastSelectedAddressRef.current = resolvedAddress;
-            onChange?.({
-              address: resolvedAddress,
-              lat: location.lat(),
-              lng: location.lng(),
-            });
-            setStatusMessage('Coordenadas detectadas automaticamente.');
-          } else {
-            setStatusMessage('No se encontro la direccion. Selecciona una sugerencia mas especifica.');
-          }
-        },
-      );
-    }, 850);
+  const handleInputChange = (event) => {
+    const nextAddress = event.target.value;
+    emitAddress(nextAddress);
+    emitLocation({ lat: '', lng: '' });
+    onChange?.({ address: nextAddress, lat: '', lng: '' });
+    setStatusMessage('Escribe y selecciona una sugerencia para obtener coordenadas.');
   };
 
   const handlePlaceChanged = () => {
     const place = autocompleteRef.current?.getPlace();
     const location = place?.geometry?.location;
+
     if (!location) {
-      setStatusMessage('Selecciona una sugerencia valida de Google Maps.');
+      setStatusMessage('No se encontraron coordenadas para esa sugerencia. Puedes seguir escribiendo manualmente.');
       return;
     }
 
-    const nextAddress = place.formatted_address || place.name || value;
-    lastSelectedAddressRef.current = nextAddress;
-    onChange?.({
-      address: nextAddress,
+    const nextAddress = place.formatted_address || place.name || addressValue;
+    const nextLocation = {
       lat: location.lat(),
       lng: location.lng(),
-    });
+    };
+
+    onAddressChange?.(nextAddress);
+    onLocationChange?.(nextLocation);
+    onChange?.({ address: nextAddress, ...nextLocation });
     setStatusMessage('Direccion seleccionada y coordenadas actualizadas.');
   };
 
   const handleMarkerDragEnd = (event) => {
-    onChange?.({
-      address: value,
+    const nextLocation = {
       lat: event.latLng.lat(),
       lng: event.latLng.lng(),
-    });
+    };
+    emitLocation(nextLocation);
+    onChange?.({ address: addressValue, ...nextLocation });
     setStatusMessage('Marcador movido manualmente; coordenadas actualizadas.');
   };
 
+  const renderAddressInput = (message) => (
+    <div className="form-group">
+      <label>{label}</label>
+      <input
+        type="text"
+        value={addressValue}
+        onChange={handleInputChange}
+        placeholder={placeholder}
+        required={required}
+        disabled={false}
+        readOnly={false}
+      />
+      {message && <p className="hint-text">{message}</p>}
+      {statusMessage && <p className="hint-text">{statusMessage}</p>}
+    </div>
+  );
+
   if (!apiKey) {
     return (
-      <div className="form-group">
-        <label>{label}</label>
-        <input value={value} onChange={(event) => updateAddress(event.target.value)} required={required} />
-        <div className="error-message mt-4">
-          Falta configurar VITE_GOOGLE_MAPS_API_KEY en el archivo .env del frontend.
-        </div>
+      <div className="address-picker">
+        {renderAddressInput('Google Places no esta disponible, puedes escribir la direccion manualmente.')}
       </div>
     );
   }
 
   if (loadError) {
     return (
-      <div className="form-group">
-        <label>{label}</label>
-        <input value={value} onChange={(event) => updateAddress(event.target.value)} required={required} />
-        <div className="error-message mt-4">
-          Google Maps no pudo cargar Places. Verifica la API key, Places API, Geocoding API y restricciones.
-        </div>
+      <div className="address-picker">
+        {renderAddressInput('Google Places no esta disponible, puedes escribir la direccion manualmente.')}
       </div>
     );
   }
@@ -152,7 +139,15 @@ export const AddressAutocompleteMap = ({
       <div className="form-group">
         <label>{label}</label>
         {!isLoaded ? (
-          <input value={value} onChange={(event) => updateAddress(event.target.value)} placeholder="Cargando Google Places..." />
+          <input
+            type="text"
+            value={addressValue}
+            onChange={handleInputChange}
+            placeholder="Cargando Google Places..."
+            required={required}
+            disabled={false}
+            readOnly={false}
+          />
         ) : (
           <Autocomplete
             onLoad={(autocomplete) => {
@@ -163,10 +158,12 @@ export const AddressAutocompleteMap = ({
           >
             <input
               type="text"
-              value={value}
-              onChange={(event) => updateAddress(event.target.value)}
+              value={addressValue}
+              onChange={handleInputChange}
               placeholder={placeholder}
               required={required}
+              disabled={false}
+              readOnly={false}
             />
           </Autocomplete>
         )}
