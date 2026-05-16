@@ -40,6 +40,9 @@ export const AppProvider = ({ children }) => {
     return [];
   };
 
+  const normalizeText = (value) => String(value || '').trim().toLowerCase();
+  const isDriverRole = (role) => ['driver', 'repartidor'].includes(normalizeText(role));
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -243,7 +246,55 @@ export const AppProvider = ({ children }) => {
     return createdDriver;
   };
 
-  const getDrivers = () => normalizeList(users).filter((user) => user.role === 'driver');
+  const getDrivers = () => {
+    const safeUsers = normalizeList(users);
+    const safeProfiles = normalizeList(driverProfiles);
+    const profilesByUserId = new Map(
+      safeProfiles
+        .filter((profile) => profile.user || profile.user_id)
+        .map((profile) => [Number(profile.user || profile.user_id), profile])
+    );
+
+    const mergedDrivers = safeUsers
+      .filter((user) => isDriverRole(user.role))
+      .map((user) => {
+        const profile = profilesByUserId.get(Number(user.id));
+        return {
+          ...user,
+          profile_id: profile?.id ?? user.profile_id,
+          disponible: profile?.disponible ?? user.disponible ?? false,
+          status: profile?.status || user.status || user.estado,
+          estado: profile?.estado || user.estado || user.status,
+          latitud_actual: profile?.latitud_actual ?? profile?.latitude ?? user.latitud_actual ?? user.latitude,
+          longitud_actual: profile?.longitud_actual ?? profile?.longitude ?? user.longitud_actual ?? user.longitude,
+          latitude: profile?.latitude ?? profile?.latitud_actual ?? user.latitude ?? user.latitud_actual,
+          longitude: profile?.longitude ?? profile?.longitud_actual ?? user.longitude ?? user.longitud_actual,
+          capacidad_maxima_kg: profile?.capacidad_maxima_kg ?? user.capacidad_maxima_kg,
+          motivo_visibilidad: user.motivo_visibilidad,
+        };
+      });
+
+    const usersById = new Set(mergedDrivers.map((driver) => Number(driver.id)));
+    const profileOnlyDrivers = safeProfiles
+      .filter((profile) => !usersById.has(Number(profile.user || profile.user_id)))
+      .map((profile) => ({
+        id: profile.user || profile.user_id || profile.id,
+        profile_id: profile.id,
+        role: profile.role || 'driver',
+        name: profile.name || profile.nombre,
+        nombre: profile.name || profile.nombre,
+        status: profile.status || profile.estado,
+        estado: profile.estado || profile.status,
+        disponible: profile.disponible,
+        latitud_actual: profile.latitud_actual ?? profile.latitude,
+        longitud_actual: profile.longitud_actual ?? profile.longitude,
+        latitude: profile.latitude ?? profile.latitud_actual,
+        longitude: profile.longitude ?? profile.longitud_actual,
+        capacidad_maxima_kg: profile.capacidad_maxima_kg,
+      }));
+
+    return [...mergedDrivers, ...profileOnlyDrivers];
+  };
 
   const updateOrderStatus = async (orderId, nextStatus) => {
     try {

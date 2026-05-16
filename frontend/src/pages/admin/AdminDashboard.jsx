@@ -4,6 +4,12 @@ import { RouteOptimizerPanel } from '../../components/RouteOptimizerPanel';
 import { useAppContext } from '../../context/AppContext';
 import { ManualAssignModal } from '../../components/ManualAssignModal';
 
+const normalizeText = (value) => String(value || '').trim().toLowerCase();
+const isAvailableDriver = (driver) => (
+  driver?.disponible === true
+  && ['disponible', 'activo', 'active', 'available'].includes(normalizeText(driver?.status || driver?.estado))
+);
+
 export const AdminDashboard = () => {
   const {
     orders,
@@ -44,7 +50,7 @@ export const AdminDashboard = () => {
 
   const drivers = Array.isArray(getDrivers?.()) ? getDrivers() : [];
   const pendingCount = safeOrders.filter(isPendingOrder).length;
-  const availableCount = drivers.filter((driver) => String(driver?.status || driver?.estado || '').toLowerCase() === 'disponible').length;
+  const availableCount = drivers.filter(isAvailableDriver).length;
 
   const pendingOrders = safeOrders.filter(isPendingOrder);
   const assignedOrders = safeOrders.filter(isAssignedOrder);
@@ -245,6 +251,9 @@ export const AdminDashboard = () => {
                 <div className={`badge ${String(driver.status || driver.estado || 'sin estado').toLowerCase()}`}>
                   {driver.status || driver.estado || 'Sin estado'}
                 </div>
+                {driver.motivo_visibilidad && (
+                  <p className="hint-text">{driver.motivo_visibilidad}</p>
+                )}
               </div>
             ))}
           </div>

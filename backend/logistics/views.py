@@ -26,6 +26,13 @@ from .models import RutaParada
 from .permissions import IsDriver, IsAdmin
 from .services.ai_route_decision_service import AiRouteDecisionService
 from .services.excel_import_service import import_excel_file
+from .services.driver_visibility import (
+    driver_visibility_reason,
+    get_driver_coordinates,
+    is_available_state,
+    is_driver_available,
+    is_driver_user,
+)
 from .services.route_metrics_service import RouteMetricsService
 from .services.route_optimizer_service import RouteOptimizerService, to_decimal
 from django.utils import timezone
@@ -66,7 +73,7 @@ class LoginView(APIView):
                 user_data['token'] = token.key
                 
                 # Si es repartidor, incluir info del Repartidor
-                if user.role == 'driver':
+                if is_driver_user(user):
                     try:
                         repartidor = Repartidor.objects.get(user=user)
                         user_data['repartidor_id'] = repartidor.id
@@ -118,11 +125,16 @@ class CustomUserViewSet(viewsets.ModelViewSet):
             item['name'] = item.pop('nombre', '')
             item['location'] = item.pop('ubicacion', 'Sin ubicación')
             item['status'] = item.pop('estado', 'Disponible')
-            if item.get('role') == 'driver':
+            if item.get('role') in ('driver', 'repartidor'):
                 profile = Repartidor.objects.filter(user_id=item.get('id')).first()
                 item['disponible'] = bool(profile and profile.disponible)
-                if not item['disponible']:
-                    item['status'] = 'No disponible'
+                if profile:
+                    item['profile_id'] = profile.id
+                    item['latitud_actual'] = profile.latitud_actual
+                    item['longitud_actual'] = profile.longitud_actual
+                    item['latitude'] = profile.latitud_actual
+                    item['longitude'] = profile.longitud_actual
+                    item['motivo_visibilidad'] = driver_visibility_reason(profile)
         return Response(data)
 
 class PedidoViewSet(viewsets.ModelViewSet):
@@ -136,13 +148,11 @@ class PedidoViewSet(viewsets.ModelViewSet):
         Complejidad: O(M * N)
         """
         pedidos_pendientes = Pedido.objects.filter(estado='Pendiente')
-        repartidores_libres = list(
-            Repartidor.objects.select_related('user').filter(
-                disponible=True,
-                user__role='driver',
-                user__estado='Disponible',
-            )
-        )
+        repartidores_libres = [
+            repartidor
+            for repartidor in Repartidor.objects.select_related('user').all()
+            if is_driver_available(repartidor)
+        ]
 
         if not repartidores_libres or not pedidos_pendientes.exists():
             return Response(
@@ -204,15 +214,20 @@ class PedidoViewSet(viewsets.ModelViewSet):
 
             repartidor_id = serializer.validated_data['repartidor_id']
             try:
-                repartidor = CustomUser.objects.get(id=repartidor_id, role='driver')
+                repartidor = CustomUser.objects.get(id=repartidor_id)
             except CustomUser.DoesNotExist:
                 return Response(
                     {'error': 'El repartidor seleccionado no existe o no es un repartidor válido.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            if not is_driver_user(repartidor):
+                return Response(
+                    {'error': 'El repartidor seleccionado no existe o no es un repartidor valido.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             repartidor_profile = Repartidor.objects.filter(user=repartidor).first()
-            if not repartidor_profile or not repartidor_profile.disponible or repartidor.estado != 'Disponible':
+            if not is_driver_available(repartidor_profile):
                 return Response(
                     {'error': 'Este repartidor esta deshabilitado y no puede recibir pedidos.'},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -240,6 +255,36 @@ class PedidoViewSet(viewsets.ModelViewSet):
 class RepartidorViewSet(viewsets.ModelViewSet):
     queryset = Repartidor.objects.all()
     serializer_class = RepartidorSerializer
+
+    @action(detail=False, methods=['get'], url_path='diagnostics')
+    def diagnostics(self, request):
+        repartidores = list(Repartidor.objects.select_related('user').all())
+        rows = []
+
+        for repartidor in repartidores:
+            coords = get_driver_coordinates(repartidor)
+            user = repartidor.user
+            rows.append({
+                'id': repartidor.id,
+                'user_id': repartidor.user_id,
+                'nombre': user.nombre or user.username,
+                'role': user.role,
+                'estado': user.estado,
+                'disponible': repartidor.disponible,
+                'latitud_actual': repartidor.latitud_actual,
+                'longitud_actual': repartidor.longitud_actual,
+                'con_coordenadas': coords is not None,
+                'motivo_no_visible': driver_visibility_reason(repartidor, require_coordinates=True),
+            })
+
+        return Response({
+            'total_repartidores': len(repartidores),
+            'con_role_driver': sum(1 for repartidor in repartidores if is_driver_user(repartidor.user)),
+            'con_estado_disponible': sum(1 for repartidor in repartidores if is_available_state(repartidor.user.estado)),
+            'con_disponible_true': sum(1 for repartidor in repartidores if repartidor.disponible is True),
+            'con_coordenadas': sum(1 for repartidor in repartidores if get_driver_coordinates(repartidor) is not None),
+            'repartidores': rows,
+        })
 
 class AliadoViewSet(viewsets.ModelViewSet):
     queryset = Aliado.objects.all()
@@ -367,7 +412,7 @@ class RutaViewSet(viewsets.ModelViewSet):
             )
 
         repartidor_profile = Repartidor.objects.filter(user=route.repartidor).first()
-        if not repartidor_profile or not repartidor_profile.disponible or route.repartidor.estado != 'Disponible':
+        if not is_driver_available(repartidor_profile):
             return Response(
                 {'error': 'Este repartidor esta deshabilitado y no puede recibir pedidos.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -425,7 +470,9 @@ class RutaViewSet(viewsets.ModelViewSet):
         return Response(RutaSerializer(route).data, status=status.HTTP_200_OK)
 
     def _create_route_from_plan(self, plan, decision, metrics):
-        repartidor = CustomUser.objects.filter(id=plan['repartidor_id'], role='driver').first()
+        repartidor = CustomUser.objects.filter(id=plan['repartidor_id']).first()
+        if repartidor and not is_driver_user(repartidor):
+            repartidor = None
         if not repartidor:
             raise ValueError('No hay repartidor viable para la ruta optimizada.')
 

@@ -84,6 +84,7 @@ export const api = {
   getOrders: () => request('/pedidos/'),
   getWarehouses: () => request('/aliados/'),
   getDrivers: () => request('/repartidores/'),
+  getDriverDiagnostics: () => request('/repartidores/diagnostics/'),
   
   // ============ DRIVER ENDPOINTS (Token Auth Required) ============
   getDriverProfile: () => request('/drivers/me/'),

@@ -24,6 +24,7 @@ from logistics.services.geospatial_helpers import (
     calculate_centroid,
     get_route_bounding_circle,
 )
+from logistics.services.driver_visibility import get_driver_coordinates, is_driver_available
 
 
 @dataclass
@@ -295,7 +296,7 @@ class RouteOptimizerService:
         if repartidor_id:
             profile = Repartidor.objects.select_related('user').filter(user_id=repartidor_id).first()
             if profile:
-                if not profile.disponible or profile.user.estado != 'Disponible':
+                if not is_driver_available(profile):
                     return {
                         'repartidor_id': None,
                         'name': profile.user.nombre,
@@ -319,31 +320,27 @@ class RouteOptimizerService:
                 'motivo': 'No se encontró perfil Repartidor; se usaron coordenadas de la solicitud.',
             }
 
-        drivers = list(
-            Repartidor.objects.select_related('user')
-            .filter(
-                user__role='driver',
-                user__estado='Disponible',
-                disponible=True,
-                latitud_actual__isnull=False,
-                longitud_actual__isnull=False,
-            )
-        )
+        drivers = [
+            driver
+            for driver in Repartidor.objects.select_related('user').all()
+            if is_driver_available(driver) and self._get_driver_coordinates(driver) is not None
+        ]
         if drivers and candidates:
             centroid = self._orders_centroid(candidates)
             best_driver = min(
                 drivers,
                 key=lambda driver: haversine_km(
-                    float(driver.latitud_actual),
-                    float(driver.longitud_actual),
+                    self._get_driver_coordinates(driver)[0],
+                    self._get_driver_coordinates(driver)[1],
                     centroid.lat,
                     centroid.lng,
                 ),
             )
+            best_coords = self._get_driver_coordinates(best_driver)
             return {
                 'repartidor_id': best_driver.user_id,
                 'name': best_driver.user.nombre,
-                'start': GeoPoint(float(best_driver.latitud_actual), float(best_driver.longitud_actual)),
+                'start': GeoPoint(best_coords[0], best_coords[1]),
                 'capacity': float(best_driver.capacidad_maxima_kg or DEFAULT_DRIVER_CAPACITY_KG),
                 'motivo': 'Repartidor disponible más cercano al centro de los pedidos pendientes.',
             }
@@ -745,35 +742,15 @@ class RouteOptimizerService:
         Extrae coordenadas del repartidor desde cualquier campo disponible.
         Intenta en orden: latitud_actual, latitud, latitude.
         """
-        lat = (
-            getattr(driver, 'latitud_actual', None)
-            or getattr(driver, 'latitud', None)
-            or getattr(driver, 'latitude', None)
-        )
-        lng = (
-            getattr(driver, 'longitud_actual', None)
-            or getattr(driver, 'longitud', None)
-            or getattr(driver, 'longitude', None)
-        )
-
-        if lat is None or lng is None:
-            return None
-
-        return (float(lat), float(lng))
+        return get_driver_coordinates(driver)
 
     def _get_available_driver_profiles(self, repartidor_id, latitud_inicial, longitud_inicial):
         profiles = []
         # Consultar todos los repartidores, sin filtrar por coordenadas aún
-        queryset = Repartidor.objects.select_related('user').filter(
-            user__role='driver',
-        )
+        queryset = Repartidor.objects.select_related('user').all()
 
         for profile in queryset:
-            if not profile.disponible:
-                continue
-
-            # Verificar que el usuario sea disponible (case-insensitive)
-            if profile.user.estado.lower() != 'disponible':
+            if not is_driver_available(profile):
                 continue
 
             # Verificar que tenga coordenadas válidas usando el helper flexible
@@ -785,7 +762,7 @@ class RouteOptimizerService:
 
         if repartidor_id:
             preferred = Repartidor.objects.select_related('user').filter(user_id=repartidor_id).first()
-            if preferred and preferred.disponible and preferred.user.estado == 'Disponible':
+            if preferred and is_driver_available(preferred) and self._get_driver_coordinates(preferred) is not None:
                 preferred_profile = self._driver_profile_from_record(preferred, latitud_inicial, longitud_inicial)
                 profiles = [profile for profile in profiles if profile['repartidor_id'] != repartidor_id]
                 profiles.insert(0, preferred_profile)

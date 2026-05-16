@@ -3,13 +3,49 @@ import { useAppContext } from '../context/AppContext';
 import { RouteStopsList } from './RouteStopsList';
 import { RouteSummary } from './RouteSummary';
 
+const normalizeText = (value) => String(value || '').trim().toLowerCase();
+const isDriverRole = (driver) => ['driver', 'repartidor'].includes(normalizeText(driver?.role));
+const isAvailableStatus = (driver) => ['disponible', 'activo', 'active', 'available']
+  .includes(normalizeText(driver?.status || driver?.estado));
+const getDriverCoordinates = (driver) => {
+  const lat = driver?.latitud_actual ?? driver?.latitud ?? driver?.latitude;
+  const lng = driver?.longitud_actual ?? driver?.longitud ?? driver?.longitude;
+  const parsedLat = Number(lat);
+  const parsedLng = Number(lng);
+  if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) return null;
+  return { lat: parsedLat, lng: parsedLng };
+};
+const getOptimizerHiddenReason = (driver) => {
+  if (!isDriverRole(driver)) return 'No aparece porque role no es driver/repartidor.';
+  if (driver?.disponible !== true) return 'No aparece porque esta No disponible.';
+  if (!isAvailableStatus(driver)) return 'No aparece porque su estado no es disponible/activo.';
+  if (!getDriverCoordinates(driver)) return 'No aparece porque no tiene coordenadas.';
+  return '';
+};
+const isAvailableForOptimization = (driver) => (
+  isDriverRole(driver)
+  && driver?.disponible === true
+  && isAvailableStatus(driver)
+  && Boolean(getDriverCoordinates(driver))
+);
+
 export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => {
   const { getDrivers, orders, optimizeRoute, assignOptimizedRoute } = useAppContext();
   const drivers = Array.isArray(getDrivers?.()) ? getDrivers() : [];
-  const availableDrivers = drivers.filter((driver) => (
-    driver.disponible !== false
-    && String(driver.status || driver.estado || '').toLowerCase() === 'disponible'
-  ));
+  const availableDrivers = useMemo(
+    () => drivers.filter(isAvailableForOptimization),
+    [drivers],
+  );
+  const hiddenDrivers = useMemo(
+    () => drivers
+      .filter((driver) => isDriverRole(driver) && !isAvailableForOptimization(driver))
+      .map((driver) => ({
+        id: driver.id,
+        name: driver.name || driver.nombre || `Driver ${driver.id}`,
+        reason: driver.motivo_visibilidad || getOptimizerHiddenReason(driver),
+      })),
+    [drivers],
+  );
   const safeOrders = Array.isArray(orders) ? orders : [];
   const pendingOrders = safeOrders.filter(
     (order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente'
@@ -39,6 +75,15 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
       setDriverId(firstDriver.id);
     }
   }, [driverId, firstDriver]);
+
+  useEffect(() => {
+    const selectedDriver = availableDrivers.find((driver) => Number(driver.id) === Number(driverId));
+    const coords = selectedDriver ? getDriverCoordinates(selectedDriver) : null;
+    if (coords && (String(coords.lat) !== String(lat) || String(coords.lng) !== String(lng))) {
+      setLat(String(coords.lat));
+      setLng(String(coords.lng));
+    }
+  }, [driverId, availableDrivers, lat, lng]);
 
   useEffect(() => {
     onDriverLocationChange?.({
@@ -118,6 +163,14 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
             ))}
           </select>
         </label>
+
+        {hiddenDrivers.length > 0 && (
+          <div className="optimizer-driver-warning">
+            {hiddenDrivers.slice(0, 3).map((driver) => (
+              <p key={driver.id}>{driver.name}: {driver.reason}</p>
+            ))}
+          </div>
+        )}
 
         <label>
           Latitud inicial

@@ -5,6 +5,7 @@ from .models import (
     CustomUser, Aliado, Repartidor, Cliente, Pedido, PedidoProducto,
     Producto, Ruta, RutaParada
 )
+from .services.driver_visibility import is_driver_user
 
 
 def validate_lat_lng(lat, lng, required=False):
@@ -488,7 +489,7 @@ class PedidoSerializer(serializers.ModelSerializer):
     )
     driverId = serializers.PrimaryKeyRelatedField(
         source='repartidor',
-        queryset=CustomUser.objects.filter(role='driver'),
+        queryset=CustomUser.objects.all(),
         required=False,
         allow_null=True,
         error_messages={
@@ -731,7 +732,9 @@ class AssignPedidoRequestSerializer(serializers.Serializer):
 
     def validate_repartidor_id(self, value):
         try:
-            CustomUser.objects.get(id=value, role='driver')
+            user = CustomUser.objects.get(id=value)
+            if not is_driver_user(user):
+                raise CustomUser.DoesNotExist
         except CustomUser.DoesNotExist:
             raise serializers.ValidationError('El repartidor seleccionado no existe.')
         return value

@@ -126,6 +126,32 @@
   color: #999;
 }
 
+.helper-message {
+  margin: 8px 0 0;
+  color: #5f6b7a;
+  font-size: 13px;
+}
+
+.driver-diagnostics {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  color: #7c2d12;
+  font-size: 13px;
+}
+
+.driver-diagnostics strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #9a3412;
+}
+
+.driver-diagnostics p {
+  margin: 4px 0;
+}
+
 .error-message {
   background-color: #fee;
   color: #c33;
