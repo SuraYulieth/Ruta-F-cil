@@ -4,8 +4,13 @@ import { RouteOptimizerPanel } from '../../components/RouteOptimizerPanel';
 import { useAppContext } from '../../context/AppContext';
 
 export const AdminDashboard = () => {
-  const { orders, warehouses, getDrivers, assignOrders } = useAppContext();
+  const { orders, warehouses, getDrivers, assignOrders, refreshData, importExcelData, loading } = useAppContext();
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [importMessage, setImportMessage] = useState('');
+  const [importError, setImportError] = useState('');
+  const [importSummary, setImportSummary] = useState(null);
   const [optimization, setOptimization] = useState(null);
   const [driverLocation, setDriverLocation] = useState({ lat: 4.7110, lng: -74.0721 });
 
@@ -19,11 +24,68 @@ export const AdminDashboard = () => {
     setIsAssigning(false);
   };
 
+  const handleRefreshImportedData = async () => {
+    setImportError('');
+    setImportMessage('');
+    try {
+      await refreshData();
+      setImportMessage('Datos actualizados desde el backend.');
+    } catch (error) {
+      setImportError(error.message || 'No se pudieron actualizar los datos.');
+    }
+  };
+
+  const handleImportExcel = async () => {
+    setImportError('');
+    setImportMessage('');
+    setImportSummary(null);
+
+    if (!selectedFile) {
+      setImportError('Selecciona un archivo Excel antes de importar.');
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const result = await importExcelData(selectedFile);
+      setImportSummary(result);
+      setImportMessage(result.message || 'Importacion completada.');
+      setSelectedFile(null);
+    } catch (error) {
+      setImportError(error.message || 'No se pudo importar el Excel.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="dashboard-content">
       <header className="page-header">
         <h1>Dashboard de asignacion</h1>
         <p>Pedidos, repartidores y optimizacion multi-pedido en una sola vista.</p>
+        <div className="import-toolbar mt-4">
+          <button className="btn-secondary" onClick={handleRefreshImportedData} disabled={loading || isImporting}>
+            {loading ? 'Actualizando...' : 'Actualizar datos'}
+          </button>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(event) => setSelectedFile(event.target.files?.[0] || null)}
+          />
+          <button className="btn-primary" onClick={handleImportExcel} disabled={isImporting}>
+            {isImporting ? 'Importando...' : 'Importar Excel'}
+          </button>
+        </div>
+        {importMessage && <div className="success-message mt-4">{importMessage}</div>}
+        {importError && <div className="error-message mt-4">{importError}</div>}
+        {importSummary && (
+          <div className="import-summary">
+            <p>Creados: {JSON.stringify(importSummary.created)}</p>
+            <p>Actualizados: {JSON.stringify(importSummary.updated)}</p>
+            {!!importSummary.warnings?.length && <p>Advertencias: {importSummary.warnings.join(' | ')}</p>}
+            {!!importSummary.errors?.length && <p>Errores: {importSummary.errors.join(' | ')}</p>}
+          </div>
+        )}
       </header>
 
       <main className="optimizer-grid">

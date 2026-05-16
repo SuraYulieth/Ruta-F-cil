@@ -9,6 +9,7 @@ export const RouteSummary = ({ optimization }) => {
 
   const optimizer = optimization.optimizer;
   const decision = optimization.decision;
+  const metrics = optimization.metrics;
 
   return (
     <div className="route-summary">
@@ -44,6 +45,19 @@ export const RouteSummary = ({ optimization }) => {
           <p key={recommendation} className="hint-text">{recommendation}</p>
         ))}
       </div>
+
+      {metrics && (
+        <div className="decision-box">
+          <h3>Evidencia ABP</h3>
+          <p>Complejidad: mejor {metrics.complejidad?.mejor_caso}, promedio {metrics.complejidad?.caso_promedio}, peor {metrics.complejidad?.peor_caso}.</p>
+          <p>{metrics.complejidad?.detalle}</p>
+          <p>
+            Manual Excel: {metrics.comparacion_manual_excel?.distancia_manual_estimada_km} km estimados.
+            Sistema: {metrics.comparacion_manual_excel?.distancia_sistema_km} km.
+          </p>
+          <p>Ahorro estimado: {metrics.comparacion_manual_excel?.ahorro_distancia_estimado_km} km.</p>
+        </div>
+      )}
     </div>
   );
 };

@@ -13,8 +13,9 @@ const apiPath = (path) => `${API_BASE_URL}${path}`;
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
 async function request(path, options = {}) {
+  const headers = options.body instanceof FormData ? {} : jsonHeaders;
   const response = await fetch(apiPath(path), {
-    headers: jsonHeaders,
+    headers,
     ...options,
   });
 
@@ -30,6 +31,20 @@ export const api = {
   getOrders: () => request('/pedidos/'),
   getWarehouses: () => request('/aliados/'),
   getDrivers: () => request('/repartidores/'),
+  refreshImportedData: () => Promise.all([
+    api.getUsers(),
+    api.getOrders(),
+    api.getWarehouses(),
+    api.getDrivers(),
+  ]).then(([users, orders, warehouses, drivers]) => ({ users, orders, warehouses, drivers })),
+  importExcel: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request('/import-excel/', {
+      method: 'POST',
+      body: formData,
+    });
+  },
   getPendingOrders: () => request('/pedidos/').then((orders) => (
     orders.filter((order) => order.status === 'Pendiente' || order.estado === 'Pendiente')
   )),
@@ -72,6 +87,7 @@ export const api = {
     });
   },
   getRoute: (routeId) => request(`/routes/${routeId}/`),
+  getRouteEvidence: (routeId) => request(`/routes/${routeId}/evidence/`),
   assignRoute: (routeId) => request(`/routes/${routeId}/assign/`, {
     method: 'POST',
   }),

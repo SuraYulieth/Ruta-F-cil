@@ -426,6 +426,32 @@
   gap: 1rem;
 }
 
+.import-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  max-width: 760px;
+}
+
+.import-toolbar input[type="file"] {
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.import-summary {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  background: rgba(56, 189, 248, 0.08);
+  color: var(--text-secondary);
+  max-width: 760px;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

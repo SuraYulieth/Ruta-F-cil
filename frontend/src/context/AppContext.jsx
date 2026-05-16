@@ -33,6 +33,20 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  const refreshData = async () => {
+    try {
+      setLoading(true);
+      const data = await api.refreshImportedData();
+      setUsers(data.users);
+      setOrders(data.orders);
+      setWarehouses(data.warehouses);
+      setDriverProfiles(data.drivers);
+      return data;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -102,8 +116,14 @@ export const AppProvider = ({ children }) => {
   };
 
   const optimizeRoute = async (payload) => api.optimizeRoute(payload);
+  const importExcelData = async (file) => {
+    const result = await api.importExcel(file);
+    await refreshData();
+    return result;
+  };
   const getPendingOrders = async () => api.getPendingOrders();
   const getRoute = async (routeId) => api.getRoute(routeId);
+  const getRouteEvidence = async (routeId) => api.getRouteEvidence(routeId);
   const updateRouteStatus = async (routeId, status) => api.updateRouteStatus(routeId, status);
 
   const assignOptimizedRoute = async (routeId) => {
@@ -129,11 +149,13 @@ export const AppProvider = ({ children }) => {
       updateDriverStatus,
       assignOrders,
       optimizeRoute,
+      importExcelData,
       getPendingOrders,
       getRoute,
+      getRouteEvidence,
       assignOptimizedRoute,
       updateRouteStatus,
-      refreshData: fetchData,
+      refreshData,
     }}>
       {children}
     </AppContext.Provider>

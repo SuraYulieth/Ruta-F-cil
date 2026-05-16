@@ -1,5 +1,9 @@
+import os
+import tempfile
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import authenticate
@@ -12,6 +16,8 @@ from .serializers import (
 )
 from .models import RutaParada
 from .services.ai_route_decision_service import AiRouteDecisionService
+from .services.excel_import_service import import_excel_file
+from .services.route_metrics_service import RouteMetricsService
 from .services.route_optimizer_service import RouteOptimizerService, to_decimal
 
 class LoginView(APIView):
@@ -31,6 +37,33 @@ class LoginView(APIView):
                 return Response(user_data, status=status.HTTP_200_OK)
             return Response({"error": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ImportExcelView(APIView):
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response({'error': 'Debe adjuntar un archivo en el campo file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        extension = os.path.splitext(uploaded_file.name)[1].lower()
+        if extension not in {'.xlsx', '.xls'}:
+            return Response({'error': 'Formato no permitido. Use .xlsx o .xls.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
+                temp_path = temp_file.name
+                for chunk in uploaded_file.chunks():
+                    temp_file.write(chunk)
+
+            result = import_excel_file(temp_path)
+            response_status = status.HTTP_200_OK if not result.get('errors') else status.HTTP_207_MULTI_STATUS
+            return Response(result, status=response_status)
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
 
 class CustomUserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
@@ -115,12 +148,14 @@ class RutaViewSet(viewsets.ModelViewSet):
             reglas_negocio=data.get('reglas_negocio'),
         )
         decision = AiRouteDecisionService().explain(result)
+        metrics = RouteMetricsService().build(result)
 
         if not result['pedidos_seleccionados']:
             return Response(
                 {
                     'route': None,
                     'decision': decision,
+                    'metrics': metrics,
                     'optimizer': self._serialize_optimizer_result(result),
                 },
                 status=status.HTTP_200_OK,
@@ -144,7 +179,7 @@ class RutaViewSet(viewsets.ModelViewSet):
                 distancia_km=result['distancia_total_km'],
                 capacidad_usada_kg=result['capacidad_usada_kg'],
                 geometria=result['geometria'],
-                decision_ai=decision,
+                decision_ai={**decision, 'metrics': metrics},
             )
             for index, stop in enumerate(result['orden_entrega'], start=1):
                 if stop['pedido'].aliado_id:
@@ -163,10 +198,27 @@ class RutaViewSet(viewsets.ModelViewSet):
             {
                 'route': RutaSerializer(route).data,
                 'decision': decision,
+                'metrics': metrics,
                 'optimizer': self._serialize_optimizer_result(result),
             },
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=['get'], url_path='evidence')
+    def evidence(self, request, pk=None):
+        route = self.get_object()
+        decision = route.decision_ai or {}
+        return Response({
+            'ruta_id': route.id,
+            'distancia_total_km': route.distancia_km,
+            'tiempo_estimado_mins': route.tiempo_estimado_mins,
+            'capacidad_usada_kg': route.capacidad_usada_kg,
+            'bodega_seleccionada': route.aliado.user.nombre if route.aliado else None,
+            'repartidor_seleccionado': route.repartidor.nombre,
+            'pedidos_asignados': list(route.paradas.values_list('pedido_id', flat=True)),
+            'explicacion_ia': decision.get('explicacion'),
+            'metrics': decision.get('metrics'),
+        })
 
     @action(detail=True, methods=['post'], url_path='assign')
     def assign(self, request, pk=None):

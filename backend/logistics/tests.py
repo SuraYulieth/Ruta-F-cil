@@ -1,7 +1,18 @@
 from django.test import TestCase
+from django.core.management import call_command
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import skipIf
+
+try:
+    from openpyxl import Workbook
+except ImportError:
+    Workbook = None
 
 from .models import Aliado, Cliente, CustomUser, Pedido, Repartidor
+from .services.route_metrics_service import RouteMetricsService
 from .services.route_optimizer_service import RouteOptimizerService, haversine_km
 
 
@@ -121,3 +132,75 @@ class RouteApiTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['optimizer']['pedidos_seleccionados'], [self.pedido.id])
         self.assertEqual(len(response.data['route']['paradas']), 1)
+        self.assertIn('metrics', response.data)
+
+
+class RouteMetricsServiceTests(TestCase):
+    def test_build_returns_abp_evidence(self):
+        result = {
+            'pedidos_seleccionados': [],
+            'distancia_total_km': 10,
+            'duracion_total_mins': 30,
+            'capacidad_usada_kg': 5,
+            'aliado_nombre': 'Bodega',
+            'repartidor_nombre': 'Driver',
+            'explicacion': 'Decision explicada',
+        }
+        metrics = RouteMetricsService().build(result)
+        self.assertEqual(metrics['complejidad']['caso_promedio'], 'O(n^2)')
+        self.assertEqual(metrics['comparacion_manual_excel']['distancia_sistema_km'], 10)
+
+
+@skipIf(Workbook is None, 'openpyxl no esta instalado')
+class ImportExcelCommandTests(TestCase):
+    def test_import_excel_command_loads_core_entities(self):
+        workbook = Workbook()
+        aliados = workbook.active
+        aliados.title = 'Aliados'
+        aliados.append(['nombre', 'username', 'direccion', 'latitud', 'longitud'])
+        aliados.append(['Bodega Uno', 'bodega_uno', 'Centro', 4.71, -74.07])
+
+        repartidores = workbook.create_sheet('Repartidores')
+        repartidores.append(['nombre', 'username', 'estado', 'latitud', 'longitud', 'capacidad'])
+        repartidores.append(['Driver Uno', 'driver_uno', 'Disponible', 4.72, -74.08, 12])
+
+        pedidos = workbook.create_sheet('Pedidos')
+        pedidos.append(['cliente', 'direccion', 'latitud', 'longitud', 'prioridad', 'peso', 'bodega'])
+        pedidos.append(['Cliente Uno', 'Calle 1', 4.73, -74.09, 'alta', 2, 'Bodega Uno'])
+
+        with TemporaryDirectory() as directory:
+            file_path = Path(directory) / 'import.xlsx'
+            workbook.save(file_path)
+            call_command('import_excel', str(file_path))
+
+        self.assertEqual(Aliado.objects.count(), 1)
+        self.assertEqual(Repartidor.objects.count(), 1)
+        self.assertEqual(Cliente.objects.count(), 1)
+        self.assertEqual(Pedido.objects.count(), 1)
+
+    def test_import_excel_endpoint_accepts_multipart_file(self):
+        workbook = Workbook()
+        clientes = workbook.active
+        clientes.title = 'Clientes'
+        clientes.append(['nombre', 'direccion', 'latitud', 'longitud'])
+        clientes.append(['Cliente API Excel', 'Calle 2', 4.71, -74.07])
+
+        with TemporaryDirectory() as directory:
+            file_path = Path(directory) / 'import.xlsx'
+            workbook.save(file_path)
+            upload = SimpleUploadedFile(
+                'import.xlsx',
+                file_path.read_bytes(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+
+        response = APIClient().post('/api/import-excel/', {'file': upload}, format='multipart')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['created']['clientes'], 1)
+        self.assertEqual(Cliente.objects.count(), 1)
+
+    def test_import_excel_endpoint_requires_file(self):
+        response = APIClient().post('/api/import-excel/', {}, format='multipart')
+
+        self.assertEqual(response.status_code, 400)

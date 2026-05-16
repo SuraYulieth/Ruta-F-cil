@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 
@@ -17,11 +17,11 @@ export const Login = () => {
     }
   };
 
-  // Si ya hay usuario, redirigir
-  if (currentUser) {
-    if (currentUser.role === 'admin') navigate('/admin/dashboard');
-    else navigate('/driver/dashboard');
-  }
+  useEffect(() => {
+    if (!currentUser) return;
+    const target = currentUser.role === 'admin' ? '/admin/dashboard' : '/driver/dashboard';
+    navigate(target, { replace: true });
+  }, [currentUser, navigate]);
 
   return (
     <div className="login-container">
