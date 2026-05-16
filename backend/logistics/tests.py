@@ -173,6 +173,28 @@ class RouteApiTests(TestCase):
         self.assertEqual(len(response.data['route']['paradas']), 1)
         self.assertIn('metrics', response.data)
 
+    def test_optimize_route_endpoint_accepts_auto_driver(self):
+        response = self.client.post('/api/routes/optimize/', {
+            'repartidor_id': 'auto',
+            'pedidos_candidatos': [self.pedido.id],
+            'capacidad_maxima': 5,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['optimizer']['pedidos_seleccionados'], [self.pedido.id])
+        self.assertEqual(response.data['route']['repartidor'], self.driver.id)
+
+    def test_optimize_route_endpoint_accepts_null_driver(self):
+        response = self.client.post('/api/routes/optimize/', {
+            'repartidor_id': None,
+            'pedidos_candidatos': [self.pedido.id],
+            'capacidad_maxima': 5,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['optimizer']['pedidos_seleccionados'], [self.pedido.id])
+        self.assertEqual(response.data['route']['repartidor'], self.driver.id)
+
     def test_manual_assign_endpoint_updates_status_and_driver(self):
         response = self.client.post(
             f'/api/pedidos/{self.pedido.id}/assign/',

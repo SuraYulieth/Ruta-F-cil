@@ -595,6 +595,23 @@ class RutaSerializer(serializers.ModelSerializer):
         ]
 
 
+class OptionalIntegerOrAutoField(serializers.Field):
+    default_error_messages = {
+        'invalid': 'El ID del repartidor debe ser un número entero válido o "auto".',
+    }
+
+    def to_internal_value(self, data):
+        if data is None or data == '' or str(data).strip().lower() in ('auto', 'automatico'):
+            return None
+        try:
+            return int(data)
+        except (TypeError, ValueError):
+            self.fail('invalid')
+
+    def to_representation(self, value):
+        return value
+
+
 class RouteOptimizeRequestSerializer(serializers.Serializer):
     modo = serializers.ChoiceField(
         choices=['ruta_unica', 'multi_ruta'],
@@ -604,11 +621,9 @@ class RouteOptimizeRequestSerializer(serializers.Serializer):
             'invalid_choice': 'El modo debe ser ruta_unica o multi_ruta.',
         }
     )
-    repartidor_id = serializers.IntegerField(
+    repartidor_id = OptionalIntegerOrAutoField(
         required=False,
-        error_messages={
-            'invalid': 'El ID del repartidor debe ser un número entero válido.',
-        }
+        allow_null=True,
     )
     latitud_inicial = serializers.FloatField(
         required=False,
@@ -764,10 +779,22 @@ class PedidoDetailResponseSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_repartidor_info(self, obj):
-        if obj.repartidor and hasattr(obj.repartidor, 'repartidor'):
-            serializer = RepartidorInfoSerializer(obj.repartidor.repartidor)
+        if not obj.repartidor:
+            return None
+
+        try:
+            repartidor_profile = obj.repartidor.repartidor
+            serializer = RepartidorInfoSerializer(repartidor_profile)
             return serializer.data
-        return None
+        except Repartidor.DoesNotExist:
+            return {
+                'id': obj.repartidor.id,
+                'name': getattr(obj.repartidor, 'nombre', None),
+                'status': getattr(obj.repartidor, 'estado', None),
+                'latitud_actual': None,
+                'longitud_actual': None,
+                'capacidad_maxima_kg': None,
+            }
 
     def get_ruta_id(self, obj):
         first_stop = obj.paradas_ruta.order_by('ruta_id').first()

@@ -953,6 +953,12 @@ class RouteOptimizerService:
             'distancia_km': round(nearest_distance, 2) if nearest_distance is not None else None,
         }
 
+    def _format_unassigned_order(self, pedido, driver, motivo):
+        return {
+            'pedido_id': pedido.id,
+            'motivo': motivo,
+        }
+
     def _build_multi_route_explanation(self, routes, unassigned_orders, summary):
         if not routes:
             return 'No se pudieron crear rutas viables para los pedidos pendientes.'

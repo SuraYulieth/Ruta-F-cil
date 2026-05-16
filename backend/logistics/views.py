@@ -1,5 +1,8 @@
 import os
+import sys
 import tempfile
+import traceback
+from pathlib import Path
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -20,6 +23,20 @@ from .services.ai_route_decision_service import AiRouteDecisionService
 from .services.excel_import_service import import_excel_file
 from .services.route_metrics_service import RouteMetricsService
 from .services.route_optimizer_service import RouteOptimizerService, to_decimal
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+ASSIGN_DEBUG_LOG_PATH = BACKEND_DIR / 'assign_debug.log'
+
+
+def _append_debug_log(message: str):
+    try:
+        ASSIGN_DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(ASSIGN_DEBUG_LOG_PATH, 'a', encoding='utf-8') as debug_log:
+            debug_log.write(message)
+    except OSError:
+        # No debemos fallar la petición por un problema de logging local.
+        pass
+
 
 class LoginView(APIView):
     def post(self, request):
@@ -127,39 +144,56 @@ class PedidoViewSet(viewsets.ModelViewSet):
         POST /api/pedidos/{id}/assign/
         Payload: {"repartidor_id": 3}
         """
-        pedido = self.get_object()
+        try:
+            _append_debug_log('--- ASSIGN REQUEST ---\n')
+            _append_debug_log(f'PK: {pk}\n')
+            _append_debug_log(f'DATA: {request.data}\n')
 
-        if pedido.estado == 'Entregado':
+            pedido = self.get_object()
+
+            if pedido.estado == 'Entregado':
+                return Response(
+                    {'error': 'No se puede asignar un pedido entregado.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if pedido.estado == 'Cancelado':
+                return Response(
+                    {'error': 'No se puede asignar un pedido cancelado.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            serializer = AssignPedidoRequestSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+
+            repartidor_id = serializer.validated_data['repartidor_id']
+            try:
+                repartidor = CustomUser.objects.get(id=repartidor_id, role='driver')
+            except CustomUser.DoesNotExist:
+                return Response(
+                    {'error': 'El repartidor seleccionado no existe o no es un repartidor válido.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            es_reasignacion = pedido.repartidor is not None and pedido.estado == 'Asignado'
+            pedido.repartidor = repartidor
+            pedido.estado = 'Asignado'
+            pedido.save(update_fields=['repartidor', 'estado'])
+
+            response_data = PedidoDetailResponseSerializer(pedido).data
             return Response(
-                {'error': 'No se puede asignar un pedido entregado.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {
+                    'message': 'Pedido reasignado correctamente' if es_reasignacion else 'Pedido asignado correctamente',
+                    'pedido': response_data,
+                },
+                status=status.HTTP_200_OK,
             )
+        except Exception:
+            _append_debug_log('ERROR:\n')
+            _append_debug_log(''.join(traceback.format_exception(*sys.exc_info())))
+            _append_debug_log('\n')
+            raise
 
-        if pedido.estado == 'Cancelado':
-            return Response(
-                {'error': 'No se puede asignar un pedido cancelado.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        serializer = AssignPedidoRequestSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        repartidor_id = serializer.validated_data['repartidor_id']
-        repartidor = CustomUser.objects.get(id=repartidor_id, role='driver')
-
-        es_reasignacion = pedido.repartidor is not None and pedido.estado == 'Asignado'
-        pedido.repartidor = repartidor
-        pedido.estado = 'Asignado'
-        pedido.save(update_fields=['repartidor', 'estado'])
-
-        response_data = PedidoDetailResponseSerializer(pedido).data
-        return Response(
-            {
-                'message': 'Pedido reasignado correctamente' if es_reasignacion else 'Pedido asignado correctamente',
-                'pedido': response_data,
-            },
-            status=status.HTTP_200_OK,
-        )
 class RepartidorViewSet(viewsets.ModelViewSet):
     queryset = Repartidor.objects.all()
     serializer_class = RepartidorSerializer
@@ -282,8 +316,20 @@ class RutaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='assign')
     def assign(self, request, pk=None):
         route = self.get_object()
+        if not route.repartidor:
+            return Response(
+                {'error': 'La ruta no tiene repartidor asignado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order_ids = list(route.paradas.values_list('pedido_id', flat=True))
+        if not order_ids:
+            return Response(
+                {'error': 'La ruta no tiene paradas registradas.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         with transaction.atomic():
-            order_ids = list(route.paradas.values_list('pedido_id', flat=True))
             Pedido.objects.filter(id__in=order_ids).update(
                 repartidor=route.repartidor,
                 estado='Asignado',
@@ -299,10 +345,16 @@ class RutaViewSet(viewsets.ModelViewSet):
     def update_status(self, request, pk=None):
         route = self.get_object()
         next_status = request.data.get('estado_ruta')
+        if not next_status:
+            return Response(
+                {'error': 'Debe enviar el campo estado_ruta.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         valid_statuses = {choice[0] for choice in Ruta._meta.get_field('estado_ruta').choices}
         if next_status not in valid_statuses:
             return Response(
-                {'error': f'estado_ruta invalido. Use uno de: {sorted(valid_statuses)}'},
+                {'error': f'estado_ruta inválido. Use uno de: {sorted(valid_statuses)}'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
