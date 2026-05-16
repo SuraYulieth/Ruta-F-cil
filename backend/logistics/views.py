@@ -114,7 +114,7 @@ class ImportExcelView(APIView):
                 os.remove(temp_path)
 
 class CustomUserViewSet(viewsets.ModelViewSet):
-    queryset = CustomUser.objects.all()
+    queryset = CustomUser.objects.order_by('id')
     serializer_class = CustomUserSerializer
 
     def list(self, request, *args, **kwargs):
@@ -139,7 +139,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         return Response(data)
 
 class PedidoViewSet(viewsets.ModelViewSet):
-    queryset = Pedido.objects.select_related('cliente', 'aliado', 'repartidor').all()
+    queryset = Pedido.objects.select_related('cliente', 'aliado', 'repartidor').order_by('id')
     serializer_class = PedidoSerializer
 
     @action(detail=False, methods=['post'])
@@ -282,7 +282,7 @@ class PedidoViewSet(viewsets.ModelViewSet):
             raise
 
 class RepartidorViewSet(viewsets.ModelViewSet):
-    queryset = Repartidor.objects.all()
+    queryset = Repartidor.objects.order_by('id')
     serializer_class = RepartidorSerializer
 
     @action(detail=True, methods=['patch'], url_path='location', permission_classes=[IsAuthenticated, IsAdmin])
@@ -368,11 +368,11 @@ class RepartidorViewSet(viewsets.ModelViewSet):
         })
 
 class AliadoViewSet(viewsets.ModelViewSet):
-    queryset = Aliado.objects.all()
+    queryset = Aliado.objects.order_by('id')
     serializer_class = AliadoSerializer
 
 class RutaViewSet(viewsets.ModelViewSet):
-    queryset = Ruta.objects.select_related('repartidor', 'pedido').prefetch_related('paradas__pedido__cliente').all()
+    queryset = Ruta.objects.select_related('repartidor', 'pedido').prefetch_related('paradas__pedido__cliente').order_by('id')
     serializer_class = RutaSerializer
     permission_classes = []  # Permitir acceso sin autenticación, pero los métodos puede validar
 

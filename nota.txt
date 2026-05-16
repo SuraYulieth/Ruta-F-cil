@@ -2,6 +2,31 @@ cd C:\Users\suray\OneDrive\Escritorio\Ruta-F-cil\backend
 C:\Users\suray\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe run_with_vendor.py migrate
 C:\Users\suray\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe run_with_vendor.py runserver 8000 --noreload
 
+cd C:\Users\suray\OneDrive\Escritorio\Ruta-F-cil\frontend
+npm install
+npm run dev
+
+
+
+
+
+
+
+
+
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r backend\requirements.txt
+python backend\run_with_vendor.py migrate
+python backend\run_with_vendor.py runserver 8000 --noreload
+
+
 cd frontend
 npm install
 npm run dev
+
+
+admin / Admin123*
+repartidor1 / Driver123*
+repartidor2 / Driver123*
