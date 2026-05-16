@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { PendingOrdersMap } from '../../components/PendingOrdersMap';
 import { RouteOptimizerPanel } from '../../components/RouteOptimizerPanel';
 import { useAppContext } from '../../context/AppContext';
@@ -267,6 +267,15 @@ export const AdminDashboard = () => {
     }
   };
 
+  const handleSelectedOptimizerDriverChange = useCallback((driver) => {
+    setSelectedOptimizerDriver((current) => {
+      const currentId = current ? Number(current.id) : null;
+      const nextId = driver ? Number(driver.id) : null;
+      if (currentId === nextId) return current;
+      return driver;
+    });
+  }, []);
+
   return (
     <div className="dashboard-content">
       <header className="page-header">
@@ -319,7 +328,7 @@ export const AdminDashboard = () => {
           onDriverLocationChange={setDriverLocation}
           onOptimized={setOptimization}
           externalDriverLocation={driverLocation}
-          onSelectedDriverChange={setSelectedOptimizerDriver}
+          onSelectedDriverChange={handleSelectedOptimizerDriverChange}
         />
       </main>
 

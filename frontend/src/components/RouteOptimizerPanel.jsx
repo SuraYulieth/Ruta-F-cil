@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { RouteStopsList } from './RouteStopsList';
 import { RouteSummary } from './RouteSummary';
@@ -57,6 +57,7 @@ export const RouteOptimizerPanel = ({
   const [optimization, setOptimization] = useState(null);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const lastNotifiedDriverIdRef = useRef(null);
 
   const selectedDriver = useMemo(
     () => driverCandidates.find((driver) => Number(driver.id) === Number(driverId)) || null,
@@ -86,8 +87,11 @@ export const RouteOptimizerPanel = ({
   }, [driverId, firstDriver]);
 
   useEffect(() => {
+    const selectedId = selectedDriver ? Number(selectedDriver.id) : null;
+    if (lastNotifiedDriverIdRef.current === selectedId) return;
+    lastNotifiedDriverIdRef.current = selectedId;
     onSelectedDriverChange?.(selectedDriver);
-  }, [selectedDriver, onSelectedDriverChange]);
+  }, [selectedDriver?.id, onSelectedDriverChange]);
 
   useEffect(() => {
     if (!selectedDriver) return;
