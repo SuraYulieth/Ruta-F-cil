@@ -46,16 +46,16 @@ def seed():
     maria.save()
 
     # 2. Crear Clientes
-    c1 = Cliente.objects.create(nombre='Restaurante El Buen Sabor', direccion='Calle 45 # 12-34')
-    c2 = Cliente.objects.create(nombre='Farmacia San Juan', direccion='Avenida Siempre Viva 742')
-    c3 = Cliente.objects.create(nombre='Supermercado Central', direccion='Carrera 15 # 8-20')
-    c4 = Cliente.objects.create(nombre='Tienda La Esquina', direccion='Calle 100 # 50-10')
+    c1 = Cliente.objects.create(nombre='Restaurante El Buen Sabor', direccion='Calle 45 # 12-34', latitud=4.7110, longitud=-74.0721)
+    c2 = Cliente.objects.create(nombre='Farmacia San Juan', direccion='Avenida Siempre Viva 742', latitud=4.7152, longitud=-74.0764)
+    c3 = Cliente.objects.create(nombre='Supermercado Central', direccion='Carrera 15 # 8-20', latitud=4.7038, longitud=-74.0677)
+    c4 = Cliente.objects.create(nombre='Tienda La Esquina', direccion='Calle 100 # 50-10', latitud=4.7205, longitud=-74.0699)
 
     # 3. Crear Pedidos
-    Pedido.objects.create(cliente=c1, estado='Pendiente')
-    Pedido.objects.create(cliente=c2, estado='Pendiente')
+    Pedido.objects.create(cliente=c1, estado='Pendiente', prioridad='alta', peso_total_kg=2.5)
+    Pedido.objects.create(cliente=c2, estado='Pendiente', prioridad='normal', peso_total_kg=1.2)
     Pedido.objects.create(cliente=c3, estado='En ruta', repartidor=luis)
-    Pedido.objects.create(cliente=c4, estado='Pendiente')
+    Pedido.objects.create(cliente=c4, estado='Pendiente', prioridad='urgente', peso_total_kg=3.0)
 
     print("Datos sembrados correctamente de acuerdo al mock del Frontend.")
 

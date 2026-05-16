@@ -1,10 +1,9 @@
-import { createContext, useState, useContext, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { api } from '../services/api';
 
 const AppContext = createContext();
 
 export const useAppContext = () => useContext(AppContext);
-
-const API_BASE_URL = 'http://localhost:8000/api';
 
 export const AppProvider = ({ children }) => {
   const [users, setUsers] = useState([]);
@@ -12,23 +11,17 @@ export const AppProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Cargar datos iniciales desde el Backend
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [usersRes, ordersRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/users/`),
-        fetch(`${API_BASE_URL}/pedidos/`)
+      const [usersData, ordersData] = await Promise.all([
+        api.getUsers(),
+        api.getOrders(),
       ]);
-      
-      if (usersRes.ok && ordersRes.ok) {
-        const usersData = await usersRes.json();
-        const ordersData = await ordersRes.json();
-        setUsers(usersData);
-        setOrders(ordersData);
-      }
+      setUsers(usersData);
+      setOrders(ordersData);
     } catch (error) {
-      console.error("Error al cargar datos del backend:", error);
+      console.error('Error al cargar datos del backend:', error);
     } finally {
       setLoading(false);
     }
@@ -40,21 +33,13 @@ export const AppProvider = ({ children }) => {
 
   const login = async (username, password) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/login/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-
-      if (response.ok) {
-        const userData = await response.json();
-        setCurrentUser(userData);
-        return true;
-      }
+      const userData = await api.login(username, password);
+      setCurrentUser(userData);
+      return true;
     } catch (error) {
-      console.error("Error en el login:", error);
+      console.error('Error en el login:', error);
+      return false;
     }
-    return false;
   };
 
   const logout = () => {
@@ -63,85 +48,59 @@ export const AppProvider = ({ children }) => {
 
   const addOrder = async (orderData) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/pedidos/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData)
-      });
-
-      if (response.ok) {
-        await fetchData(); // Recargar datos para asegurar sincronización
-      }
+      await api.createOrder(orderData);
+      await fetchData();
     } catch (error) {
-      console.error("Error al agregar pedido:", error);
+      console.error('Error al agregar pedido:', error);
     }
   };
 
   const addUser = async (userData) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/users/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData)
-      });
-
-      if (response.ok) {
-        await fetchData();
-      }
+      await api.createUser(userData);
+      await fetchData();
     } catch (error) {
-      console.error("Error al agregar usuario:", error);
+      console.error('Error al agregar usuario:', error);
     }
   };
 
-  const getDrivers = () => users.filter(u => u.role === 'driver');
+  const getDrivers = () => users.filter((user) => user.role === 'driver');
 
-  const updateOrderStatus = async (orderId, status) => {
+  const updateOrderStatus = async (orderId, nextStatus) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/pedidos/${orderId}/`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado: status })
-      });
-
-      if (response.ok) {
-        await fetchData();
-      }
+      await api.updateOrder(orderId, { estado: nextStatus });
+      await fetchData();
     } catch (error) {
-      console.error("Error al actualizar pedido:", error);
+      console.error('Error al actualizar pedido:', error);
     }
   };
 
-  const updateDriverStatus = async (driverId, status) => {
+  const updateDriverStatus = async (driverId, nextStatus) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/users/${driverId}/`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado: status })
-      });
-
-      if (response.ok) {
-        await fetchData();
-      }
+      await api.updateUser(driverId, { estado: nextStatus });
+      await fetchData();
     } catch (error) {
-      console.error("Error al actualizar repartidor:", error);
+      console.error('Error al actualizar repartidor:', error);
     }
   };
 
   const assignOrders = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/pedidos/asignar_automatico/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (response.ok) {
-        await fetchData();
-        return true;
-      }
+      await api.autoAssignOrders();
+      await fetchData();
+      return true;
     } catch (error) {
-      console.error("Error al asignar pedidos:", error);
+      console.error('Error al asignar pedidos:', error);
+      return false;
     }
-    return false;
+  };
+
+  const optimizeRoute = async (payload) => api.optimizeRoute(payload);
+
+  const assignOptimizedRoute = async (routeId) => {
+    const route = await api.assignRoute(routeId);
+    await fetchData();
+    return route;
   };
 
   return (
@@ -157,7 +116,10 @@ export const AppProvider = ({ children }) => {
       getDrivers,
       updateOrderStatus,
       updateDriverStatus,
-      assignOrders
+      assignOrders,
+      optimizeRoute,
+      assignOptimizedRoute,
+      refreshData: fetchData,
     }}>
       {children}
     </AppContext.Provider>

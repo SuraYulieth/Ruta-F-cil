@@ -3,54 +3,114 @@ import { useAppContext } from '../../context/AppContext';
 
 export const CreateRoute = () => {
   const { addOrder } = useAppContext();
-  const [customer, setCustomer] = useState('');
-  const [destination, setDestination] = useState('');
+  const [form, setForm] = useState({
+    customer: '',
+    destination: '',
+    latitude: '',
+    longitude: '',
+    priority: 'normal',
+    weightKg: '0',
+  });
   const [successMsg, setSuccessMsg] = useState('');
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    await addOrder({ customer, destination });
-    setCustomer('');
-    setDestination('');
-    setSuccessMsg('Ruta creada exitosamente');
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    await addOrder({
+      ...form,
+      latitude: form.latitude ? Number(form.latitude) : null,
+      longitude: form.longitude ? Number(form.longitude) : null,
+      weightKg: Number(form.weightKg || 0),
+    });
+    setForm({
+      customer: '',
+      destination: '',
+      latitude: '',
+      longitude: '',
+      priority: 'normal',
+      weightKg: '0',
+    });
+    setSuccessMsg('Pedido creado exitosamente');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
   return (
     <div className="dashboard-content">
       <header className="page-header">
-        <h1>Crear Nueva Ruta</h1>
-        <p>Añade un nuevo pedido al sistema para ser asignado.</p>
+        <h1>Crear nuevo pedido</h1>
+        <p>Registra destino, coordenadas y datos logisticos para optimizar rutas.</p>
       </header>
 
       <section className="panel form-panel">
         <form onSubmit={handleSubmit} className="custom-form">
           {successMsg && <div className="success-message">{successMsg}</div>}
-          
+
           <div className="form-group">
-            <label>Cliente / Negocio</label>
-            <input 
-              type="text" 
-              value={customer} 
-              onChange={(e) => setCustomer(e.target.value)} 
+            <label>Cliente / negocio</label>
+            <input
+              type="text"
+              value={form.customer}
+              onChange={(event) => updateField('customer', event.target.value)}
               placeholder="Ej: Farmacia Central"
-              required 
+              required
             />
           </div>
 
           <div className="form-group">
-            <label>Dirección de Destino</label>
-            <input 
-              type="text" 
-              value={destination} 
-              onChange={(e) => setDestination(e.target.value)} 
+            <label>Direccion de destino</label>
+            <input
+              type="text"
+              value={form.destination}
+              onChange={(event) => updateField('destination', event.target.value)}
               placeholder="Ej: Calle 50 # 10-20"
-              required 
+              required
             />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Latitud</label>
+              <input
+                value={form.latitude}
+                onChange={(event) => updateField('latitude', event.target.value)}
+                placeholder="4.7110"
+              />
+            </div>
+            <div className="form-group">
+              <label>Longitud</label>
+              <input
+                value={form.longitude}
+                onChange={(event) => updateField('longitude', event.target.value)}
+                placeholder="-74.0721"
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Prioridad</label>
+              <select value={form.priority} onChange={(event) => updateField('priority', event.target.value)}>
+                <option value="baja">Baja</option>
+                <option value="normal">Normal</option>
+                <option value="alta">Alta</option>
+                <option value="urgente">Urgente</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Peso kg</label>
+              <input
+                value={form.weightKg}
+                onChange={(event) => updateField('weightKg', event.target.value)}
+                placeholder="2.5"
+              />
+            </div>
           </div>
 
           <button type="submit" className="btn-primary mt-4">
-            ➕ Registrar Ruta
+            Registrar pedido
           </button>
         </form>
       </section>
