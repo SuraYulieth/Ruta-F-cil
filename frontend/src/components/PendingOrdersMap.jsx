@@ -1,4 +1,4 @@
-import { GoogleMap, InfoWindowF, MarkerF, PolylineF, useJsApiLoader } from '@react-google-maps/api';
+import { CircleF, GoogleMap, InfoWindowF, MarkerF, PolylineF, useJsApiLoader } from '@react-google-maps/api';
 import { useMemo, useState } from 'react';
 
 const GOOGLE_MAPS_LIBRARIES = ['places'];
@@ -92,6 +92,28 @@ export const PendingOrdersMap = ({
   ), [warehouses]);
 
   const optimizer = optimization?.optimizer;
+  const driverDiagnostics = optimizer?.driver_diagnostics || optimization?.decision?.driver_diagnostics || null;
+  const coverageRecommendation = driverDiagnostics?.coverage_recommendation || null;
+  const demandCenter = coverageRecommendation?.centro_demanda
+    ? {
+        lat: toNumber(coverageRecommendation.centro_demanda.latitud),
+        lng: toNumber(coverageRecommendation.centro_demanda.longitud),
+      }
+    : null;
+  const diagnosticDriverMarkers = useMemo(() => (
+    (driverDiagnostics?.detalle || [])
+      .map((driver) => {
+        const lat = toNumber(driver.coordenadas_actuales?.latitud);
+        const lng = toNumber(driver.coordenadas_actuales?.longitud);
+        if (lat === null || lng === null) return null;
+        return {
+          ...driver,
+          position: { lat, lng },
+          isOutsideRadius: Number(driver.distancia_al_centro_demanda_km) > Number(driver.radio_maximo_km || 0),
+        };
+      })
+      .filter(Boolean)
+  ), [driverDiagnostics]);
   const routes = useMemo(() => {
     if (optimizer?.routes?.length) {
       return optimizer.routes;
@@ -211,6 +233,33 @@ export const PendingOrdersMap = ({
               title="Ubicacion inicial del repartidor"
             />
 
+            {demandCenter?.lat !== null && demandCenter?.lng !== null && (
+              <>
+                <CircleF
+                  center={demandCenter}
+                  radius={Number(coverageRecommendation?.radio_maximo_km || 0) * 1000}
+                  options={{
+                    strokeColor: '#22c55e',
+                    strokeOpacity: 0.7,
+                    strokeWeight: 2,
+                    fillColor: '#22c55e',
+                    fillOpacity: 0.08,
+                  }}
+                />
+                <MarkerF
+                  position={demandCenter}
+                  label={{ text: 'C', color: '#ffffff', fontWeight: '900' }}
+                  title="Centro recomendado de demanda"
+                  onClick={() => setActiveOrder({
+                    id: 'centro-demanda',
+                    customer: 'Centro recomendado',
+                    destination: coverageRecommendation?.mensaje || 'Centro de demanda',
+                    position: demandCenter,
+                  })}
+                />
+              </>
+            )}
+
             {warehouseMarkers.map((warehouse) => (
               <MarkerF
                 key={`warehouse-${warehouse.id}`}
@@ -271,6 +320,33 @@ export const PendingOrdersMap = ({
                   strokeColor: '#ffffff',
                   strokeWeight: 2,
                 }}
+              />
+            ))}
+
+            {diagnosticDriverMarkers.map((driver) => (
+              <MarkerF
+                key={`driver-diagnostic-${driver.id}`}
+                position={driver.position}
+                label={{
+                  text: 'D',
+                  color: '#ffffff',
+                  fontWeight: '900',
+                }}
+                title={`${driver.nombre}: ${driver.motivo}`}
+                icon={{
+                  path: window.google.maps.SymbolPath.CIRCLE,
+                  scale: 10,
+                  fillColor: driver.apto ? '#16a34a' : driver.isOutsideRadius ? '#dc2626' : '#f59e0b',
+                  fillOpacity: 1,
+                  strokeColor: '#ffffff',
+                  strokeWeight: 2,
+                }}
+                onClick={() => setActiveOrder({
+                  id: `driver-${driver.id}`,
+                  customer: driver.nombre,
+                  destination: `${driver.motivo}${driver.distancia_al_centro_demanda_km ? ` (${driver.distancia_al_centro_demanda_km} km)` : ''}`,
+                  position: driver.position,
+                })}
               />
             ))}
 

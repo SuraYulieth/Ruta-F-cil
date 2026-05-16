@@ -660,6 +660,198 @@
   margin-bottom: 0.25rem;
 }
 
+.summary-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.btn-secondary.compact {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.unassigned-summary-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.unassigned-summary-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem 0.75rem;
+  padding: 0.85rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.unassigned-summary-item span {
+  font-weight: 800;
+}
+
+.unassigned-summary-item strong {
+  font-size: 1.15rem;
+}
+
+.unassigned-summary-item p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.unassigned-summary-item.capacity {
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.unassigned-summary-item.capacity span,
+.unassigned-summary-item.capacity strong {
+  color: #fde68a;
+}
+
+.unassigned-summary-item.coverage {
+  border-color: rgba(239, 68, 68, 0.28);
+}
+
+.unassigned-summary-item.coverage span,
+.unassigned-summary-item.coverage strong {
+  color: #fecaca;
+}
+
+.unassigned-summary-item.rules {
+  border-color: rgba(96, 165, 250, 0.28);
+}
+
+.unassigned-summary-item.rules span,
+.unassigned-summary-item.rules strong {
+  color: #bfdbfe;
+}
+
+.technical-detail-list {
+  margin-top: 1rem;
+  max-height: 260px;
+  overflow: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 0.75rem;
+}
+
+.driver-diagnostic-box {
+  border-color: rgba(96, 165, 250, 0.22);
+}
+
+.driver-diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 0.75rem;
+}
+
+.driver-diagnostic-grid div {
+  padding: 0.85rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.driver-diagnostic-grid span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  margin-bottom: 0.35rem;
+}
+
+.driver-diagnostic-grid strong {
+  font-size: 1.45rem;
+}
+
+.driver-diagnostic-table {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.4rem;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.driver-diagnostic-head,
+.driver-diagnostic-row {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr 0.75fr 0.75fr 1.7fr;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.driver-diagnostic-head {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.driver-diagnostic-row {
+  padding: 0.7rem;
+  border-radius: 0.65rem;
+  background: rgba(15, 23, 42, 0.55);
+  color: var(--text-secondary);
+}
+
+.coverage-recommendation-card {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.coverage-recommendation-card p {
+  color: var(--text-secondary);
+  margin: 0.4rem 0 0.75rem;
+}
+
+.coverage-recommendation-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-bottom: 0.85rem;
+}
+
+.coverage-recommendation-metrics span {
+  padding: 0.4rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.5);
+  color: var(--text-secondary);
+}
+
+.coverage-map-link {
+  width: fit-content;
+  text-decoration: none;
+}
+
+.outside-radius-detail {
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.outside-radius-detail summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: #fecaca;
+}
+
+.outside-radius-detail article {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.outside-radius-detail p {
+  margin: 0.3rem 0;
+  color: var(--text-secondary);
+}
+
 .warning-text {
   color: #fbbf24;
   margin-top: 0.5rem;

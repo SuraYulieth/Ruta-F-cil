@@ -4,9 +4,8 @@ export const RouteStopsList = ({ optimization }) => {
     : optimization?.route
       ? [optimization.route]
       : [];
-  const unassignedOrders = optimization?.optimizer?.unassigned_orders || optimization?.optimizer?.pedidos_descartados || [];
 
-  if (!routes.length && !unassignedOrders.length) {
+  if (!routes.length) {
     return <div className="empty-state">Todavia no hay paradas optimizadas.</div>;
   }
 
@@ -31,16 +30,6 @@ export const RouteStopsList = ({ optimization }) => {
         </div>
       ))}
 
-      {unassignedOrders.length > 0 && (
-        <div className="decision-box">
-          <h3>Pedidos no asignados</h3>
-          {unassignedOrders.map((item) => (
-            <p key={item.pedido_id} className="warning-text">
-              Pedido #{item.pedido_id}: {item.motivo}
-            </p>
-          ))}
-        </div>
-      )}
     </div>
   );
 };

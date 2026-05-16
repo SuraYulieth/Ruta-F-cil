@@ -19,6 +19,7 @@ class AiRouteDecisionService:
         capacity_used = float(optimizer_result.get('capacidad_total_usada_kg') or 0)
         metrics = optimizer_result.get('metricas', {})
         summary = optimizer_result.get('summary', {})
+        driver_diagnostics = optimizer_result.get('driver_diagnostics', {}) or {}
         allowed_radius = float(optimizer_result.get('radio_permitido_km') or MAX_ROUTE_RADIUS_KM)
         total_routes = int(optimizer_result.get('total_rutas') or summary.get('rutas_creadas') or len(routes) or 0)
 
@@ -26,8 +27,12 @@ class AiRouteDecisionService:
         recommendations = []
 
         if not selected:
-            alerts.append('No hay pedidos viables para agrupar en este momento.')
-            recommendations.append('Verificar que los pedidos pendientes tengan coordenadas válidas y capacidad suficiente.')
+            if driver_diagnostics.get('total_repartidores', 0) > 0 and driver_diagnostics.get('aptos_para_optimizar', 0) == 0:
+                alerts.append(self._driver_diagnostics_explanation(driver_diagnostics))
+                recommendations.append('Activar un repartidor, verificar coordenadas y confirmar que no tenga ruta activa.')
+            else:
+                alerts.append('No hay pedidos viables para agrupar en este momento.')
+                recommendations.append('Verificar que los pedidos pendientes tengan coordenadas válidas y capacidad suficiente.')
         else:
             outside_radius_count = sum(
                 1 for item in discarded if 'radio' in str(item.get('motivo', '')).lower()
@@ -118,8 +123,30 @@ class AiRouteDecisionService:
                 'nombre': primary_route.get('repartidor_nombre') if primary_route else None,
                 'motivo': primary_route.get('repartidor_motivo') if primary_route else None,
             },
+            'driver_diagnostics': driver_diagnostics,
             'sugerencia_mejora': self._suggest_next_step(selected, discarded, metrics, total_routes),
         }
+
+    def _driver_diagnostics_explanation(self, diagnostics):
+        parts = []
+        labels = [
+            ('deshabilitados', 'deshabilitados'),
+            ('en_entrega', 'en entrega'),
+            ('sin_coordenadas', 'sin coordenadas'),
+            ('fuera_de_radio', 'fuera del radio permitido'),
+            ('estado_invalido', 'con estado no disponible'),
+            ('role_invalido', 'con rol no valido'),
+        ]
+        for key, label in labels:
+            count = int(diagnostics.get(key) or 0)
+            if count:
+                parts.append(f'{count} {label}')
+
+        suffix = ', '.join(parts) if parts else 'sin condiciones operativas validas'
+        return (
+            'No se crearon rutas porque no hay repartidores aptos para optimizar: '
+            f'{suffix}.'
+        )
 
     def _calculate_confidence(self, metrics):
         selected = int(metrics.get('pedidos_seleccionados', 0))

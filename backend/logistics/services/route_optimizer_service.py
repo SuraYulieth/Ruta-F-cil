@@ -5,7 +5,7 @@ from typing import List, Tuple, Dict, Optional
 
 from django.utils import timezone
 
-from logistics.models import Aliado, Pedido, Repartidor
+from logistics.models import Aliado, Pedido, Repartidor, Ruta
 from logistics.config import (
     MAX_ROUTE_RADIUS_KM,
     MAX_ROUTE_RADIUS_METERS,
@@ -24,7 +24,12 @@ from logistics.services.geospatial_helpers import (
     calculate_centroid,
     get_route_bounding_circle,
 )
-from logistics.services.driver_visibility import get_driver_coordinates, is_driver_available
+from logistics.services.driver_visibility import (
+    get_driver_coordinates,
+    is_available_state,
+    is_driver_available,
+    is_driver_user,
+)
 
 
 @dataclass
@@ -588,11 +593,12 @@ class RouteOptimizerService:
             rules['max_distance_km'] = max_distance_km
 
         candidates = self._get_candidates(pedidos_candidatos)
+        driver_diagnostics = self._build_driver_diagnostics(candidates)
         drivers = self._get_available_driver_profiles(repartidor_id, latitud_inicial, longitud_inicial)
 
         discarded = []
         if not candidates:
-            return self._create_multi_empty_response(discarded)
+            return self._create_multi_empty_response(discarded, driver_diagnostics=driver_diagnostics)
 
         if not drivers:
             for pedido in candidates:
@@ -601,7 +607,11 @@ class RouteOptimizerService:
                     None,
                     'No hay repartidores disponibles con coordenadas.',
                 ))
-            return self._create_multi_empty_response(discarded, total_candidates=len(candidates))
+            return self._create_multi_empty_response(
+                discarded,
+                total_candidates=len(candidates),
+                driver_diagnostics=driver_diagnostics,
+            )
 
         max_capacity_limit = float(
             capacidad_maxima
@@ -629,7 +639,11 @@ class RouteOptimizerService:
             valid_candidates.append(pedido)
 
         if not valid_candidates:
-            return self._create_multi_empty_response(discarded, total_candidates=len(candidates))
+            return self._create_multi_empty_response(
+                discarded,
+                total_candidates=len(candidates),
+                driver_diagnostics=driver_diagnostics,
+            )
 
         remaining = list(valid_candidates)
         routes = []
@@ -691,6 +705,7 @@ class RouteOptimizerService:
             'pedidos_descartados': discarded,
             'unassigned_orders': discarded,
             'unassigned_summary': self._summarize_unassigned(discarded),
+            'driver_diagnostics': driver_diagnostics,
             'total_rutas': len(routes),
             'radio_permitido_km': MAX_ROUTE_RADIUS_KM,
             'radio_permitido_m2': MAX_ROUTE_AREA_KM2,
@@ -708,7 +723,7 @@ class RouteOptimizerService:
             },
         }
 
-    def _create_multi_empty_response(self, discarded, total_candidates=0):
+    def _create_multi_empty_response(self, discarded, total_candidates=0, driver_diagnostics=None):
         return {
             'modo': 'multi_ruta',
             'routes': [],
@@ -717,6 +732,7 @@ class RouteOptimizerService:
             'pedidos_descartados': discarded,
             'unassigned_orders': discarded,
             'unassigned_summary': self._summarize_unassigned(discarded),
+            'driver_diagnostics': driver_diagnostics or self._empty_driver_diagnostics(),
             'total_rutas': 0,
             'radio_permitido_km': MAX_ROUTE_RADIUS_KM,
             'radio_permitido_m2': MAX_ROUTE_AREA_KM2,
@@ -754,6 +770,208 @@ class RouteOptimizerService:
             for motivo, pedido_ids in grouped.items()
         ]
 
+    def _empty_driver_diagnostics(self):
+        return {
+            'total_repartidores': 0,
+            'disponibles': 0,
+            'deshabilitados': 0,
+            'en_entrega': 0,
+            'sin_coordenadas': 0,
+            'fuera_de_radio': 0,
+            'role_invalido': 0,
+            'estado_invalido': 0,
+            'aptos_para_optimizar': 0,
+            'detalle': [],
+        }
+
+    def _build_driver_diagnostics(self, candidates):
+        diagnostics = self._empty_driver_diagnostics()
+        centroid = self._calculate_orders_centroid(candidates)
+        candidate_points = []
+        if centroid:
+            candidate_points.append((centroid['latitud'], centroid['longitud']))
+        diagnostics['coverage_recommendation'] = self._build_coverage_recommendation(candidates, centroid)
+
+        for profile in Repartidor.objects.select_related('user').all():
+            user = profile.user
+            coords = self._get_driver_coordinates(profile)
+            has_active_route = self._driver_has_active_route(user)
+            role_valid = is_driver_user(user)
+            state_valid = is_available_state(getattr(user, 'estado', None))
+            available_flag = profile.disponible is True
+            outside_radius = False
+            distance_to_centroid = None
+
+            if coords and candidate_points:
+                distance_to_centroid = haversine_km(
+                    coords[0],
+                    coords[1],
+                    centroid['latitud'],
+                    centroid['longitud'],
+                )
+                outside_radius = distance_to_centroid > MAX_ROUTE_RADIUS_KM
+
+            if role_valid and available_flag and state_valid:
+                diagnostics['disponibles'] += 1
+            if not role_valid:
+                diagnostics['role_invalido'] += 1
+            if not available_flag:
+                diagnostics['deshabilitados'] += 1
+            if has_active_route:
+                diagnostics['en_entrega'] += 1
+            if not state_valid:
+                diagnostics['estado_invalido'] += 1
+            if coords is None:
+                diagnostics['sin_coordenadas'] += 1
+            if outside_radius:
+                diagnostics['fuera_de_radio'] += 1
+
+            apto = (
+                role_valid
+                and available_flag
+                and state_valid
+                and coords is not None
+                and not has_active_route
+                and not outside_radius
+            )
+            if apto:
+                diagnostics['aptos_para_optimizar'] += 1
+
+            diagnostics['detalle'].append({
+                'id': user.id,
+                'nombre': user.nombre or user.username,
+                'estado': user.estado,
+                'disponible': profile.disponible,
+                'tiene_coordenadas': coords is not None,
+                'tiene_ruta_activa': has_active_route,
+                'apto': apto,
+                'motivo': self._driver_diagnostic_reason(
+                    role_valid,
+                    available_flag,
+                    state_valid,
+                    coords is not None,
+                    has_active_route,
+                    outside_radius,
+                ),
+                'coordenadas_actuales': (
+                    {'latitud': coords[0], 'longitud': coords[1]}
+                    if coords else None
+                ),
+                'coordenadas_recomendadas': (
+                    {'latitud': centroid['latitud'], 'longitud': centroid['longitud']}
+                    if centroid else None
+                ),
+                'distancia_al_centro_demanda_km': (
+                    round(distance_to_centroid, 2) if distance_to_centroid is not None else None
+                ),
+                'radio_maximo_km': round(MAX_ROUTE_RADIUS_KM, 2),
+                'zona_sugerida': (
+                    'Ubicarse cerca del centro de los pedidos pendientes.'
+                    if outside_radius else None
+                ),
+            })
+
+        diagnostics['total_repartidores'] = len(diagnostics['detalle'])
+        return diagnostics
+
+    def _calculate_orders_centroid(self, orders):
+        valid = []
+        for pedido in orders:
+            cliente = getattr(pedido, 'cliente', None)
+            if cliente and cliente.latitud is not None and cliente.longitud is not None:
+                valid.append((float(cliente.latitud), float(cliente.longitud)))
+
+        if not valid:
+            return None
+
+        avg_lat = sum(lat for lat, _ in valid) / len(valid)
+        avg_lng = sum(lng for _, lng in valid) / len(valid)
+        return {
+            'latitud': round(avg_lat, 6),
+            'longitud': round(avg_lng, 6),
+        }
+
+    def _build_coverage_recommendation(self, candidates, centroid):
+        if not centroid:
+            return {
+                'centro_demanda': None,
+                'radio_maximo_km': round(MAX_ROUTE_RADIUS_KM, 2),
+                'mensaje': 'No hay pedidos pendientes con coordenadas suficientes para calcular un centro de demanda.',
+                'google_maps_url': None,
+            }
+
+        warehouse = self._select_warehouse_for_orders([
+            pedido for pedido in candidates
+            if pedido.cliente.latitud is not None and pedido.cliente.longitud is not None
+        ])
+        warehouse_point = None
+        if warehouse and warehouse.latitud is not None and warehouse.longitud is not None:
+            warehouse_point = {
+                'latitud': float(warehouse.latitud),
+                'longitud': float(warehouse.longitud),
+                'nombre': warehouse.user.nombre,
+            }
+
+        first_order = self._nearest_order_to_centroid(candidates, centroid)
+
+        return {
+            'centro_demanda': centroid,
+            'radio_maximo_km': round(MAX_ROUTE_RADIUS_KM, 2),
+            'mensaje': (
+                f'Para tomar estos pedidos, al menos un repartidor disponible debe estar dentro de '
+                f'{MAX_ROUTE_RADIUS_KM:.2f} km del centro de demanda. Ubica un repartidor cerca de estas '
+                f'coordenadas: latitud {centroid["latitud"]}, longitud {centroid["longitud"]}.'
+            ),
+            'google_maps_url': f'https://www.google.com/maps?q={centroid["latitud"]},{centroid["longitud"]}',
+            'bodega_sugerida': warehouse_point,
+            'primer_pedido_cercano': first_order,
+        }
+
+    def _nearest_order_to_centroid(self, candidates, centroid):
+        valid = [
+            pedido for pedido in candidates
+            if pedido.cliente.latitud is not None and pedido.cliente.longitud is not None
+        ]
+        if not valid:
+            return None
+
+        nearest = min(
+            valid,
+            key=lambda pedido: haversine_km(
+                centroid['latitud'],
+                centroid['longitud'],
+                float(pedido.cliente.latitud),
+                float(pedido.cliente.longitud),
+            ),
+        )
+        return {
+            'pedido_id': nearest.id,
+            'latitud': float(nearest.cliente.latitud),
+            'longitud': float(nearest.cliente.longitud),
+            'direccion': nearest.cliente.direccion,
+        }
+
+    def _driver_diagnostic_reason(self, role_valid, available_flag, state_valid, has_coords, has_active_route, outside_radius):
+        if not role_valid:
+            return 'No tiene un rol valido para reparto.'
+        if not available_flag:
+            return 'Esta deshabilitado por el repartidor.'
+        if has_active_route:
+            return 'Esta en entrega actualmente.'
+        if not state_valid:
+            return 'Su estado operativo no es Disponible.'
+        if not has_coords:
+            return 'No tiene ubicacion actual registrada.'
+        if outside_radius:
+            return 'Esta fuera del radio permitido para estos pedidos.'
+        return 'Apto para optimizar.'
+
+    def _driver_has_active_route(self, user):
+        return Ruta.objects.filter(
+            repartidor=user,
+            estado_ruta__in=['asignada', 'en_ruta'],
+        ).exists()
+
     def _get_driver_coordinates(self, driver):
         """
         Extrae coordenadas del repartidor desde cualquier campo disponible.
@@ -769,6 +987,8 @@ class RouteOptimizerService:
         for profile in queryset:
             if not is_driver_available(profile):
                 continue
+            if self._driver_has_active_route(profile.user):
+                continue
 
             # Verificar que tenga coordenadas válidas usando el helper flexible
             coords = self._get_driver_coordinates(profile)
@@ -779,7 +999,12 @@ class RouteOptimizerService:
 
         if repartidor_id:
             preferred = Repartidor.objects.select_related('user').filter(user_id=repartidor_id).first()
-            if preferred and is_driver_available(preferred) and self._get_driver_coordinates(preferred) is not None:
+            if (
+                preferred
+                and is_driver_available(preferred)
+                and not self._driver_has_active_route(preferred.user)
+                and self._get_driver_coordinates(preferred) is not None
+            ):
                 preferred_profile = self._driver_profile_from_record(preferred, latitud_inicial, longitud_inicial)
                 profiles = [profile for profile in profiles if profile['repartidor_id'] != repartidor_id]
                 profiles.insert(0, preferred_profile)
