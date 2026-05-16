@@ -4,7 +4,7 @@ import { RouteOptimizerPanel } from '../../components/RouteOptimizerPanel';
 import { useAppContext } from '../../context/AppContext';
 
 export const AdminDashboard = () => {
-  const { orders, getDrivers, assignOrders } = useAppContext();
+  const { orders, warehouses, getDrivers, assignOrders } = useAppContext();
   const [isAssigning, setIsAssigning] = useState(false);
   const [optimization, setOptimization] = useState(null);
   const [driverLocation, setDriverLocation] = useState({ lat: 4.7110, lng: -74.0721 });
@@ -29,8 +29,10 @@ export const AdminDashboard = () => {
       <main className="optimizer-grid">
         <PendingOrdersMap
           orders={orders}
+          warehouses={warehouses}
           driverLocation={optimization?.optimizer?.start || driverLocation}
           selectedOrderIds={optimization?.optimizer?.pedidos_seleccionados || []}
+          selectedWarehouseId={optimization?.optimizer?.aliado_id}
           routeGeometry={optimization?.optimizer?.geometria}
           routeStops={optimization?.route?.paradas || []}
         />

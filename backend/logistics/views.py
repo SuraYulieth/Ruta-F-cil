@@ -105,18 +105,11 @@ class RutaViewSet(viewsets.ModelViewSet):
         request_serializer.is_valid(raise_exception=True)
         data = request_serializer.validated_data
 
-        repartidor = CustomUser.objects.filter(id=data['repartidor_id'], role='driver').first()
-        if not repartidor:
-            return Response(
-                {'error': 'Repartidor no encontrado o el usuario no tiene rol driver.'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
         optimizer = RouteOptimizerService()
         result = optimizer.optimize(
-            repartidor_id=repartidor.id,
-            latitud_inicial=data['latitud_inicial'],
-            longitud_inicial=data['longitud_inicial'],
+            repartidor_id=data.get('repartidor_id'),
+            latitud_inicial=data.get('latitud_inicial'),
+            longitud_inicial=data.get('longitud_inicial'),
             pedidos_candidatos=data.get('pedidos_candidatos'),
             capacidad_maxima=data.get('capacidad_maxima'),
             reglas_negocio=data.get('reglas_negocio'),
@@ -133,11 +126,20 @@ class RutaViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_200_OK,
             )
 
+        repartidor = CustomUser.objects.filter(id=result['repartidor_id'], role='driver').first()
+        if not repartidor:
+            return Response(
+                {'error': 'No hay repartidor viable para la ruta optimizada.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        aliado = Aliado.objects.filter(id=result.get('aliado_id')).first()
+
         with transaction.atomic():
             route = Ruta.objects.create(
                 repartidor=repartidor,
-                latitud_inicio=to_decimal(data['latitud_inicial']),
-                longitud_inicio=to_decimal(data['longitud_inicial']),
+                aliado=aliado,
+                latitud_inicio=to_decimal(result['start']['lat']),
+                longitud_inicio=to_decimal(result['start']['lng']),
                 tiempo_estimado_mins=result['duracion_total_mins'],
                 distancia_km=result['distancia_total_km'],
                 capacidad_usada_kg=result['capacidad_usada_kg'],
@@ -145,6 +147,8 @@ class RutaViewSet(viewsets.ModelViewSet):
                 decision_ai=decision,
             )
             for index, stop in enumerate(result['orden_entrega'], start=1):
+                if stop['pedido'].aliado_id:
+                    stop['pedido'].save(update_fields=['aliado'])
                 RutaParada.objects.create(
                     ruta=route,
                     pedido=stop['pedido'],
@@ -224,6 +228,12 @@ class RutaViewSet(viewsets.ModelViewSet):
             'distancia_total_km': result['distancia_total_km'],
             'duracion_total_mins': result['duracion_total_mins'],
             'capacidad_usada_kg': result['capacidad_usada_kg'],
+            'repartidor_id': result.get('repartidor_id'),
+            'repartidor_nombre': result.get('repartidor_nombre'),
+            'repartidor_motivo': result.get('repartidor_motivo'),
+            'aliado_id': result.get('aliado_id'),
+            'aliado_nombre': result.get('aliado_nombre'),
+            'scoring': result.get('scoring', []),
             'geometria': result['geometria'],
             'explicacion': result['explicacion'],
         }

@@ -27,15 +27,27 @@ class LoginSerializer(serializers.Serializer):
 
 
 class AliadoSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='user.nombre', read_only=True)
+    latitude = serializers.DecimalField(source='latitud', max_digits=10, decimal_places=8, read_only=True)
+    longitude = serializers.DecimalField(source='longitud', max_digits=11, decimal_places=8, read_only=True)
+
     class Meta:
         model = Aliado
-        fields = '__all__'
+        fields = ['id', 'user', 'name', 'direccion', 'latitud', 'longitud', 'latitude', 'longitude']
 
 
 class RepartidorSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='user.nombre', read_only=True)
+    status = serializers.CharField(source='user.estado', read_only=True)
+    latitude = serializers.DecimalField(source='latitud_actual', max_digits=10, decimal_places=8, read_only=True)
+    longitude = serializers.DecimalField(source='longitud_actual', max_digits=11, decimal_places=8, read_only=True)
+
     class Meta:
         model = Repartidor
-        fields = '__all__'
+        fields = [
+            'id', 'user', 'name', 'status', 'telefono', 'latitud_actual', 'longitud_actual',
+            'latitude', 'longitude', 'capacidad_maxima_kg', 'volumen_maximo_m3'
+        ]
 
 
 class ClienteSerializer(serializers.ModelSerializer):
@@ -69,6 +81,13 @@ class PedidoSerializer(serializers.ModelSerializer):
     )
     status = serializers.CharField(source='estado', required=False)
     priority = serializers.CharField(source='prioridad', required=False)
+    warehouseId = serializers.PrimaryKeyRelatedField(
+        source='aliado',
+        queryset=Aliado.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    warehouseName = serializers.CharField(source='aliado.user.nombre', read_only=True)
     weightKg = serializers.DecimalField(
         source='peso_total_kg', max_digits=8, decimal_places=2, required=False
     )
@@ -83,8 +102,8 @@ class PedidoSerializer(serializers.ModelSerializer):
         model = Pedido
         fields = [
             'id', 'customer', 'destination', 'latitude', 'longitude', 'estado', 'status',
-            'priority', 'weightKg', 'driverId', 'fecha_creacion', 'ventana_entrega_inicio',
-            'ventana_entrega_fin'
+            'priority', 'warehouseId', 'warehouseName', 'weightKg', 'driverId',
+            'fecha_creacion', 'ventana_entrega_inicio', 'ventana_entrega_fin'
         ]
 
     def create(self, validated_data):
@@ -131,15 +150,15 @@ class RutaSerializer(serializers.ModelSerializer):
         model = Ruta
         fields = [
             'id', 'pedido', 'repartidor', 'latitud_inicio', 'longitud_inicio',
-            'tiempo_estimado_mins', 'distancia_km', 'estado_ruta',
+            'aliado', 'tiempo_estimado_mins', 'distancia_km', 'estado_ruta',
             'capacidad_usada_kg', 'geometria', 'decision_ai', 'fecha_creacion', 'paradas'
         ]
 
 
 class RouteOptimizeRequestSerializer(serializers.Serializer):
-    repartidor_id = serializers.IntegerField()
-    latitud_inicial = serializers.FloatField()
-    longitud_inicial = serializers.FloatField()
+    repartidor_id = serializers.IntegerField(required=False)
+    latitud_inicial = serializers.FloatField(required=False)
+    longitud_inicial = serializers.FloatField(required=False)
     pedidos_candidatos = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,

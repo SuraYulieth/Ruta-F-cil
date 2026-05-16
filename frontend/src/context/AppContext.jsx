@@ -8,18 +8,24 @@ export const useAppContext = () => useContext(AppContext);
 export const AppProvider = ({ children }) => {
   const [users, setUsers] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [driverProfiles, setDriverProfiles] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [usersData, ordersData] = await Promise.all([
+      const [usersData, ordersData, warehousesData, driverProfilesData] = await Promise.all([
         api.getUsers(),
         api.getOrders(),
+        api.getWarehouses(),
+        api.getDrivers(),
       ]);
       setUsers(usersData);
       setOrders(ordersData);
+      setWarehouses(warehousesData);
+      setDriverProfiles(driverProfilesData);
     } catch (error) {
       console.error('Error al cargar datos del backend:', error);
     } finally {
@@ -110,6 +116,8 @@ export const AppProvider = ({ children }) => {
     <AppContext.Provider value={{
       users,
       orders,
+      warehouses,
+      driverProfiles,
       currentUser,
       loading,
       login,

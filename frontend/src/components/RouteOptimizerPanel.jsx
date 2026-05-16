@@ -50,7 +50,7 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
     setIsOptimizing(true);
     try {
       const result = await optimizeRoute({
-        repartidor_id: Number(driverId),
+        repartidor_id: driverId ? Number(driverId) : undefined,
         latitud_inicio: Number(lat),
         longitud_inicio: Number(lng),
         pedidos_candidatos: pendingOrders.map((order) => order.id),
@@ -90,6 +90,7 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
         <label>
           Repartidor
           <select value={driverId} onChange={(event) => setDriverId(event.target.value)}>
+            <option value="">Automatico</option>
             {drivers.map((driver) => (
               <option key={driver.id} value={driver.id}>{driver.name}</option>
             ))}
@@ -118,7 +119,7 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
         <button
           className="btn-primary"
           onClick={handleOptimize}
-          disabled={isOptimizing || !driverId || pendingOrders.length === 0}
+          disabled={isOptimizing || pendingOrders.length === 0}
         >
           {isOptimizing ? 'Optimizando...' : 'Optimizar ruta'}
         </button>

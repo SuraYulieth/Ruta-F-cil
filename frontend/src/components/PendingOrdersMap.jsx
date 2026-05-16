@@ -22,6 +22,13 @@ const getOrderPosition = (order) => {
   return { lat, lng };
 };
 
+const getWarehousePosition = (warehouse) => {
+  const lat = toNumber(warehouse.latitude ?? warehouse.latitud);
+  const lng = toNumber(warehouse.longitude ?? warehouse.longitud);
+  if (lat === null || lng === null) return null;
+  return { lat, lng };
+};
+
 const getStopOrderByPedidoId = (routeStops = []) => {
   const entries = routeStops
     .map((stop) => [Number(stop.pedido?.id ?? stop.pedido_id), stop.orden])
@@ -49,6 +56,8 @@ export const PendingOrdersMap = ({
   selectedOrderIds = [],
   routeGeometry,
   routeStops = [],
+  warehouses = [],
+  selectedWarehouseId,
   driverLocation = DEFAULT_DRIVER_LOCATION,
 }) => {
   const [activeOrder, setActiveOrder] = useState(null);
@@ -70,6 +79,11 @@ export const PendingOrdersMap = ({
       .map((order) => ({ ...order, position: getOrderPosition(order) }))
       .filter((order) => order.position)
   ), [orders]);
+  const warehouseMarkers = useMemo(() => (
+    warehouses
+      .map((warehouse) => ({ ...warehouse, position: getWarehousePosition(warehouse) }))
+      .filter((warehouse) => warehouse.position)
+  ), [warehouses]);
 
   const selectedSet = useMemo(() => new Set(selectedOrderIds.map(Number)), [selectedOrderIds]);
   const stopOrderByPedidoId = useMemo(() => getStopOrderByPedidoId(routeStops), [routeStops]);
@@ -123,6 +137,25 @@ export const PendingOrdersMap = ({
               label={{ text: 'R', color: '#ffffff', fontWeight: '700' }}
               title="Ubicacion inicial del repartidor"
             />
+
+            {warehouseMarkers.map((warehouse) => (
+              <MarkerF
+                key={`warehouse-${warehouse.id}`}
+                position={warehouse.position}
+                label={{
+                  text: selectedWarehouseId && Number(selectedWarehouseId) === Number(warehouse.id) ? 'B*' : 'B',
+                  color: '#ffffff',
+                  fontWeight: '800',
+                }}
+                title={`Bodega: ${warehouse.name || warehouse.direccion}`}
+                onClick={() => setActiveOrder({
+                  id: `bodega-${warehouse.id}`,
+                  customer: warehouse.name || 'Bodega',
+                  destination: warehouse.direccion,
+                  position: warehouse.position,
+                })}
+              />
+            ))}
 
             {pendingOrders.map((order) => {
               const stopOrder = stopOrderByPedidoId.get(Number(order.id));

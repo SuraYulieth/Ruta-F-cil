@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import Cliente, CustomUser, Pedido
+from .models import Aliado, Cliente, CustomUser, Pedido, Repartidor
 from .services.route_optimizer_service import RouteOptimizerService, haversine_km
 
 
@@ -12,6 +12,24 @@ class RouteOptimizerServiceTests(TestCase):
             password='123',
             role='driver',
             nombre='Driver Uno',
+        )
+        Repartidor.objects.create(
+            user=self.driver,
+            latitud_actual=4.7100,
+            longitud_actual=-74.0700,
+            capacidad_maxima_kg=10,
+        )
+        warehouse_user = CustomUser.objects.create_user(
+            username='warehouse1',
+            password='123',
+            role='aliado',
+            nombre='Bodega Test',
+        )
+        self.warehouse = Aliado.objects.create(
+            user=warehouse_user,
+            direccion='Bodega',
+            latitud=4.7120,
+            longitud=-74.0710,
         )
         cliente_a = Cliente.objects.create(
             nombre='Cliente A',
@@ -49,6 +67,11 @@ class RouteOptimizerServiceTests(TestCase):
         self.assertIn(self.pedido_b.id, selected_ids)
         self.assertEqual(len(result['orden_entrega']), 2)
         self.assertGreater(result['distancia_total_km'], 0)
+        self.assertEqual(result['aliado_id'], self.warehouse.id)
+
+    def test_optimizer_can_select_driver_automatically(self):
+        result = RouteOptimizerService().optimize(capacidad_maxima=10)
+        self.assertEqual(result['repartidor_id'], self.driver.id)
 
 
 class RouteApiTests(TestCase):
@@ -59,6 +82,24 @@ class RouteApiTests(TestCase):
             password='123',
             role='driver',
             nombre='Driver API',
+        )
+        Repartidor.objects.create(
+            user=self.driver,
+            latitud_actual=4.7100,
+            longitud_actual=-74.0700,
+            capacidad_maxima_kg=5,
+        )
+        warehouse_user = CustomUser.objects.create_user(
+            username='warehouse-api',
+            password='123',
+            role='aliado',
+            nombre='Bodega API',
+        )
+        Aliado.objects.create(
+            user=warehouse_user,
+            direccion='Centro',
+            latitud=4.7115,
+            longitud=-74.0715,
         )
         cliente = Cliente.objects.create(
             nombre='Cliente API',

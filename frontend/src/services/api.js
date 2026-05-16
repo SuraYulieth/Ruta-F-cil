@@ -28,6 +28,8 @@ async function request(path, options = {}) {
 export const api = {
   getUsers: () => request('/users/'),
   getOrders: () => request('/pedidos/'),
+  getWarehouses: () => request('/aliados/'),
+  getDrivers: () => request('/repartidores/'),
   getPendingOrders: () => request('/pedidos/').then((orders) => (
     orders.filter((order) => order.status === 'Pendiente' || order.estado === 'Pendiente')
   )),

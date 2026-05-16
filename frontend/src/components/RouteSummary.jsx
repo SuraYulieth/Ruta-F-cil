@@ -30,6 +30,13 @@ export const RouteSummary = ({ optimization }) => {
       <div className="decision-box">
         <h3>Decision inteligente</h3>
         <p>{decision?.explicacion}</p>
+        {decision?.eficiencia && <p>{decision.eficiencia}</p>}
+        {decision?.repartidor?.nombre && (
+          <p className="hint-text">Repartidor sugerido: {decision.repartidor.nombre}</p>
+        )}
+        {decision?.bodega?.nombre && (
+          <p className="hint-text">Bodega sugerida: {decision.bodega.nombre}</p>
+        )}
         {decision?.alertas?.map((alert) => (
           <p key={alert} className="warning-text">{alert}</p>
         ))}

@@ -99,6 +99,7 @@ class PedidoProducto(models.Model):
 class Ruta(models.Model):
     pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, null=True, blank=True)
     repartidor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'driver'})
+    aliado = models.ForeignKey(Aliado, on_delete=models.SET_NULL, null=True, blank=True)
     latitud_inicio = models.DecimalField(max_digits=10, decimal_places=8, null=True, blank=True)
     longitud_inicio = models.DecimalField(max_digits=11, decimal_places=8, null=True, blank=True)
     tiempo_estimado_mins = models.IntegerField(null=True, blank=True)
