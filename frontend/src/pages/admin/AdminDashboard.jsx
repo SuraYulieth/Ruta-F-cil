@@ -276,6 +276,20 @@ export const AdminDashboard = () => {
     });
   }, []);
 
+  const handleDriverLocationDraftChange = useCallback((nextLocation) => {
+    setDriverLocation((current) => {
+      const currentLat = Number(current?.lat);
+      const currentLng = Number(current?.lng);
+      const nextLat = Number(nextLocation?.lat);
+      const nextLng = Number(nextLocation?.lng);
+
+      if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return current;
+      if (currentLat === nextLat && currentLng === nextLng) return current;
+
+      return { lat: nextLat, lng: nextLng };
+    });
+  }, []);
+
   return (
     <div className="dashboard-content">
       <header className="page-header">
@@ -316,7 +330,7 @@ export const AdminDashboard = () => {
           driverLocation={driverLocation}
           selectedDriver={selectedOptimizerDriver}
           isAdminMode
-          onDriverLocationDraftChange={setDriverLocation}
+          onDriverLocationDraftChange={handleDriverLocationDraftChange}
           selectedOrderIds={optimization?.optimizer?.pedidos_seleccionados || []}
           selectedWarehouseId={optimization?.optimizer?.aliado_id}
           routeGeometry={optimization?.optimizer?.geometria}
@@ -325,7 +339,7 @@ export const AdminDashboard = () => {
           routes={safeRoutes}
         />
         <RouteOptimizerPanel
-          onDriverLocationChange={setDriverLocation}
+          onDriverLocationChange={handleDriverLocationDraftChange}
           onOptimized={setOptimization}
           externalDriverLocation={driverLocation}
           onSelectedDriverChange={handleSelectedOptimizerDriverChange}

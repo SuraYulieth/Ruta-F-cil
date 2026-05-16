@@ -58,6 +58,7 @@ export const RouteOptimizerPanel = ({
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const lastNotifiedDriverIdRef = useRef(null);
+  const lastPublishedLocationRef = useRef({ lat: null, lng: null });
 
   const selectedDriver = useMemo(
     () => driverCandidates.find((driver) => Number(driver.id) === Number(driverId)) || null,
@@ -102,7 +103,7 @@ export const RouteOptimizerPanel = ({
     const nextLng = String(coords.lng);
     if (nextLat !== String(lat)) setLat(nextLat);
     if (nextLng !== String(lng)) setLng(nextLng);
-  }, [selectedDriver]);
+  }, [selectedDriver?.id]);
 
   useEffect(() => {
     const externalLat = Number(externalDriverLocation?.lat);
@@ -111,10 +112,17 @@ export const RouteOptimizerPanel = ({
 
     if (String(externalLat) !== String(lat)) setLat(String(externalLat));
     if (String(externalLng) !== String(lng)) setLng(String(externalLng));
-  }, [externalDriverLocation]);
+  }, [externalDriverLocation?.lat, externalDriverLocation?.lng]);
 
   useEffect(() => {
     if (!hasValidDraftCoordinates) return;
+    if (
+      lastPublishedLocationRef.current.lat === parsedLat
+      && lastPublishedLocationRef.current.lng === parsedLng
+    ) {
+      return;
+    }
+    lastPublishedLocationRef.current = { lat: parsedLat, lng: parsedLng };
     onDriverLocationChange?.({
       lat: parsedLat,
       lng: parsedLng,
