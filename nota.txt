@@ -9,7 +9,8 @@ npm run dev
 
 
 
-
+git config --global user.name "SuraYulieth"
+git config --global user.email "suray610@gmail.com"
 
 
 
