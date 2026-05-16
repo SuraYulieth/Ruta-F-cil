@@ -247,7 +247,8 @@ class RepartidorSerializer(serializers.ModelSerializer):
         model = Repartidor
         fields = [
             'id', 'user', 'name', 'status', 'telefono', 'latitud_actual', 'longitud_actual',
-            'latitude', 'longitude', 'capacidad_maxima_kg', 'volumen_maximo_m3'
+            'latitude', 'longitude', 'capacidad_maxima_kg', 'volumen_maximo_m3',
+            'disponible'
         ]
 
     def validate(self, attrs):

@@ -6,11 +6,15 @@ import { RouteSummary } from './RouteSummary';
 export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => {
   const { getDrivers, orders, optimizeRoute, assignOptimizedRoute } = useAppContext();
   const drivers = Array.isArray(getDrivers?.()) ? getDrivers() : [];
+  const availableDrivers = drivers.filter((driver) => (
+    driver.disponible !== false
+    && String(driver.status || driver.estado || '').toLowerCase() === 'disponible'
+  ));
   const safeOrders = Array.isArray(orders) ? orders : [];
   const pendingOrders = safeOrders.filter(
     (order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente'
   );
-  const firstDriver = drivers.find((driver) => String(driver.status || driver.estado || '').toLowerCase() === 'disponible') || drivers[0];
+  const firstDriver = availableDrivers[0];
 
   const [driverId, setDriverId] = useState(firstDriver?.id || '');
   const [routeMode, setRouteMode] = useState('multi_ruta');
@@ -109,7 +113,7 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
           Repartidor
           <select value={driverId} onChange={(event) => setDriverId(event.target.value)}>
             <option value="">Automatico</option>
-            {drivers.map((driver) => (
+            {availableDrivers.map((driver) => (
               <option key={driver.id} value={driver.id}>{driver.name || driver.nombre || `Driver ${driver.id}`}</option>
             ))}
           </select>

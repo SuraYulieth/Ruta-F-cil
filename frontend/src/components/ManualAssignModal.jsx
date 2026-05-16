@@ -34,9 +34,11 @@ export const ManualAssignModal = ({
 
   if (!isOpen) return null;
 
-  const filteredDrivers = drivers.filter(
-    (driver) => driver.role === 'driver'
-  );
+  const filteredDrivers = drivers.filter((driver) => driver.role === 'driver');
+  const availableDrivers = filteredDrivers.filter((driver) => (
+    driver.disponible !== false
+    && String(driver.status || driver.estado || '').toLowerCase() === 'disponible'
+  ));
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -66,12 +68,17 @@ export const ManualAssignModal = ({
               disabled={isLoading}
             >
               <option value="">-- Seleccionar --</option>
-              {filteredDrivers.map((driver) => (
+              {availableDrivers.map((driver) => (
                 <option key={driver.id} value={driver.id}>
                   {driver.name || driver.nombre} ({driver.status || driver.estado})
                 </option>
               ))}
             </select>
+            {availableDrivers.length === 0 && (
+              <p className="warning-message mt-4">
+                No hay repartidores disponibles. Los repartidores deshabilitados no pueden recibir pedidos.
+              </p>
+            )}
           </div>
 
           {error && <div className="error-message">{error}</div>}

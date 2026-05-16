@@ -587,3 +587,364 @@
 .spinner { width: 20px; height: 20px; border: 3px solid rgba(255, 255, 255, 0.3); border-radius: 50%; border-top-color: white; animation: spin 1s ease-in-out infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty-state { text-align: center; color: var(--text-secondary); padding: 2rem; font-style: italic; }
+
+/* Driver dashboard */
+.driver-dashboard {
+  max-width: 1180px;
+}
+
+.driver-hero,
+.driver-shell-card,
+.driver-availability-card,
+.driver-panel,
+.driver-stat-card,
+.driver-lock-alert,
+.driver-toast {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+.driver-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 2rem;
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(30, 41, 59, 0.78)),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.22), transparent 38%);
+}
+
+.driver-hero h1,
+.driver-shell-card h1 {
+  margin: 0.35rem 0;
+  font-size: clamp(2rem, 5vw, 3.3rem);
+}
+
+.driver-hero p,
+.driver-shell-card p {
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.driver-kicker {
+  color: #93c5fd;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.driver-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.driver-live-pill span {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.driver-live-pill.is-online {
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.driver-live-pill.is-offline {
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+.driver-availability-card {
+  position: relative;
+  overflow: hidden;
+  margin-top: 1.5rem;
+  padding: 2rem;
+  border-radius: 1.5rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 1.5rem;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.driver-availability-card.available {
+  border-color: rgba(52, 211, 153, 0.38);
+}
+
+.driver-availability-card.unavailable {
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.availability-glow {
+  position: absolute;
+  inset: auto -15% -60% auto;
+  width: 360px;
+  height: 360px;
+  border-radius: 999px;
+  background: rgba(248, 113, 113, 0.16);
+  filter: blur(18px);
+}
+
+.available .availability-glow {
+  background: rgba(52, 211, 153, 0.14);
+}
+
+.availability-main {
+  position: relative;
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.availability-icon {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  border-radius: 1.2rem;
+  font-weight: 900;
+  color: #0f172a;
+  background: #f87171;
+  box-shadow: 0 16px 40px rgba(248, 113, 113, 0.3);
+}
+
+.available .availability-icon {
+  background: #34d399;
+  box-shadow: 0 16px 40px rgba(52, 211, 153, 0.3);
+}
+
+.availability-main h2 {
+  margin: 0.25rem 0;
+  font-size: clamp(1.7rem, 4vw, 2.8rem);
+  letter-spacing: 0.04em;
+}
+
+.availability-main p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.availability-action {
+  position: relative;
+  min-width: 210px;
+  border: 0;
+  border-radius: 1rem;
+  padding: 1rem 1.35rem;
+  color: white;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.availability-action:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.availability-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.availability-action.success {
+  background: linear-gradient(135deg, #10b981, #22c55e);
+  box-shadow: 0 14px 34px rgba(16, 185, 129, 0.28);
+}
+
+.availability-action.danger {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  box-shadow: 0 14px 34px rgba(239, 68, 68, 0.28);
+}
+
+.driver-lock-alert {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  background: rgba(239, 68, 68, 0.13);
+  color: #fecaca;
+}
+
+.driver-lock-alert span {
+  color: var(--text-secondary);
+}
+
+.driver-stat-grid {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.driver-stat-card,
+.driver-panel,
+.driver-shell-card {
+  border-radius: 1.1rem;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.driver-stat-card {
+  padding: 1.25rem;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.driver-stat-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(147, 197, 253, 0.3);
+}
+
+.driver-stat-card span,
+.driver-stat-card small {
+  color: var(--text-secondary);
+}
+
+.driver-stat-card strong {
+  display: block;
+  margin: 0.45rem 0;
+  font-size: 2.4rem;
+}
+
+.driver-work-grid {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.6fr);
+  gap: 1.5rem;
+}
+
+.driver-panel,
+.driver-shell-card {
+  padding: 1.5rem;
+}
+
+.driver-error-card {
+  margin-top: 2rem;
+}
+
+.driver-order-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.driver-order-card,
+.driver-route-card,
+.driver-empty-state {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.driver-order-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.driver-order-head span {
+  color: #bfdbfe;
+  font-weight: 800;
+}
+
+.driver-order-card p {
+  color: var(--text-secondary);
+  margin: 0.35rem 0;
+}
+
+.driver-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.driver-route-card span {
+  color: var(--text-secondary);
+}
+
+.driver-route-card strong {
+  display: block;
+  margin: 0.4rem 0;
+  font-size: 1.7rem;
+}
+
+.driver-empty-state {
+  color: var(--text-secondary);
+}
+
+.driver-empty-state strong {
+  display: block;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}
+
+.driver-toast {
+  margin-top: 1rem;
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem;
+  font-weight: 700;
+}
+
+.driver-toast-success {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.driver-toast-error {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.24);
+}
+
+.driver-skeleton-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.driver-skeleton-grid div {
+  min-height: 84px;
+  border-radius: 1rem;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.12), rgba(255,255,255,0.04));
+  animation: driverSkeleton 1.2s infinite;
+}
+
+@keyframes driverSkeleton {
+  0% { opacity: 0.45; }
+  50% { opacity: 1; }
+  100% { opacity: 0.45; }
+}
+
+@media (max-width: 900px) {
+  .driver-hero,
+  .driver-availability-card {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .driver-stat-grid,
+  .driver-work-grid,
+  .driver-skeleton-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .availability-action {
+    width: 100%;
+  }
+}

@@ -118,6 +118,11 @@ class CustomUserViewSet(viewsets.ModelViewSet):
             item['name'] = item.pop('nombre', '')
             item['location'] = item.pop('ubicacion', 'Sin ubicación')
             item['status'] = item.pop('estado', 'Disponible')
+            if item.get('role') == 'driver':
+                profile = Repartidor.objects.filter(user_id=item.get('id')).first()
+                item['disponible'] = bool(profile and profile.disponible)
+                if not item['disponible']:
+                    item['status'] = 'No disponible'
         return Response(data)
 
 class PedidoViewSet(viewsets.ModelViewSet):
@@ -131,9 +136,15 @@ class PedidoViewSet(viewsets.ModelViewSet):
         Complejidad: O(M * N)
         """
         pedidos_pendientes = Pedido.objects.filter(estado='Pendiente')
-        repartidores_libres = CustomUser.objects.filter(role='driver', estado='Disponible')
+        repartidores_libres = list(
+            Repartidor.objects.select_related('user').filter(
+                disponible=True,
+                user__role='driver',
+                user__estado='Disponible',
+            )
+        )
 
-        if not repartidores_libres.exists() or not pedidos_pendientes.exists():
+        if not repartidores_libres or not pedidos_pendientes.exists():
             return Response(
                 {"error": "No hay pedidos pendientes o repartidores disponibles"}, 
                 status=status.HTTP_400_BAD_REQUEST
@@ -141,18 +152,21 @@ class PedidoViewSet(viewsets.ModelViewSet):
 
         asignaciones = 0
         for pedido in pedidos_pendientes:
+            if not repartidores_libres:
+                break
             # Simulamos distancias (al no tener la lat/lon mapeada al 100% en todos lados por simplificacion)
             # En un entorno real se usaría Haversine. Aquí cogemos el primero disponible.
-            mejor_repartidor = repartidores_libres.first()
+            mejor_repartidor = repartidores_libres[0]
 
             if mejor_repartidor:
-                pedido.repartidor = mejor_repartidor
+                pedido.repartidor = mejor_repartidor.user
                 pedido.estado = 'Asignado'
                 pedido.save()
                 
                 # Ocupamos al repartidor para que no se le asignen multiples al mismo tiempo
-                mejor_repartidor.estado = 'Ocupado'
-                mejor_repartidor.save()
+                mejor_repartidor.user.estado = 'Ocupado'
+                mejor_repartidor.user.save(update_fields=['estado'])
+                repartidores_libres.pop(0)
                 
                 asignaciones += 1
 
@@ -194,6 +208,13 @@ class PedidoViewSet(viewsets.ModelViewSet):
             except CustomUser.DoesNotExist:
                 return Response(
                     {'error': 'El repartidor seleccionado no existe o no es un repartidor válido.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            repartidor_profile = Repartidor.objects.filter(user=repartidor).first()
+            if not repartidor_profile or not repartidor_profile.disponible or repartidor.estado != 'Disponible':
+                return Response(
+                    {'error': 'Este repartidor esta deshabilitado y no puede recibir pedidos.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -342,6 +363,13 @@ class RutaViewSet(viewsets.ModelViewSet):
         if not route.repartidor:
             return Response(
                 {'error': 'La ruta no tiene repartidor asignado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        repartidor_profile = Repartidor.objects.filter(user=route.repartidor).first()
+        if not repartidor_profile or not repartidor_profile.disponible or route.repartidor.estado != 'Disponible':
+            return Response(
+                {'error': 'Este repartidor esta deshabilitado y no puede recibir pedidos.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

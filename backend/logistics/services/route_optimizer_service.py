@@ -87,6 +87,21 @@ class RouteOptimizerService:
         
         # Asignar bodega cercana
         selected_warehouse, warehouse_notes = self._assign_nearest_warehouses(candidates)
+
+        if not driver_profile.get('repartidor_id'):
+            discarded = [
+                {
+                    'pedido_id': pedido.id,
+                    'motivo': driver_profile.get('motivo') or 'No hay repartidor disponible para recibir pedidos.',
+                }
+                for pedido in candidates
+            ]
+            discarded.extend(warehouse_notes)
+            return self._create_empty_response(
+                driver_profile,
+                selected_warehouse,
+                discarded,
+            )
         
         # Filtrar pedidos factibles por coordenadas y capacidad individual
         feasible, discarded = self._filter_feasible(candidates, capacity)
@@ -280,6 +295,14 @@ class RouteOptimizerService:
         if repartidor_id:
             profile = Repartidor.objects.select_related('user').filter(user_id=repartidor_id).first()
             if profile:
+                if not profile.disponible or profile.user.estado != 'Disponible':
+                    return {
+                        'repartidor_id': None,
+                        'name': profile.user.nombre,
+                        'start': GeoPoint(float(latitud_inicial or 0), float(longitud_inicial or 0)),
+                        'capacity': DEFAULT_DRIVER_CAPACITY_KG,
+                        'motivo': 'El repartidor indicado esta deshabilitado o no disponible.',
+                    }
                 start = self._driver_start(profile, latitud_inicial, longitud_inicial)
                 return {
                     'repartidor_id': profile.user_id,
@@ -301,6 +324,7 @@ class RouteOptimizerService:
             .filter(
                 user__role='driver',
                 user__estado='Disponible',
+                disponible=True,
                 latitud_actual__isnull=False,
                 longitud_actual__isnull=False,
             )
@@ -761,7 +785,7 @@ class RouteOptimizerService:
 
         if repartidor_id:
             preferred = Repartidor.objects.select_related('user').filter(user_id=repartidor_id).first()
-            if preferred:
+            if preferred and preferred.disponible and preferred.user.estado == 'Disponible':
                 preferred_profile = self._driver_profile_from_record(preferred, latitud_inicial, longitud_inicial)
                 profiles = [profile for profile in profiles if profile['repartidor_id'] != repartidor_id]
                 profiles.insert(0, preferred_profile)
