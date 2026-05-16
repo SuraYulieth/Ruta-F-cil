@@ -54,6 +54,19 @@ def get_driver_coordinates(repartidor):
         return None
 
 
+def is_driver_outside_radius(repartidor):
+    if not repartidor:
+        return False
+
+    try:
+        distance = float(getattr(repartidor, 'distancia_al_centro_demanda_km', None))
+        max_radius = float(getattr(repartidor, 'radio_maximo_km', None))
+    except (TypeError, ValueError):
+        return False
+
+    return distance > max_radius
+
+
 def driver_visibility_reason(repartidor, require_coordinates=False):
     if not repartidor:
         return 'No aparece porque no tiene perfil de repartidor.'
@@ -71,7 +84,13 @@ def driver_visibility_reason(repartidor, require_coordinates=False):
     if require_coordinates and get_driver_coordinates(repartidor) is None:
         return 'No aparece porque no tiene coordenadas.'
 
+    if require_coordinates and is_driver_outside_radius(repartidor):
+        return 'No aparece porque esta fuera del radio permitido.'
+
     if get_driver_coordinates(repartidor) is None:
         return 'Visible para asignacion manual; no aparece en optimizacion porque no tiene coordenadas.'
+
+    if is_driver_outside_radius(repartidor):
+        return 'Visible para asignacion manual; no aparece en optimizacion porque esta fuera del radio permitido.'
 
     return 'Visible para asignacion manual y optimizacion.'

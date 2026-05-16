@@ -479,14 +479,15 @@
 
 .drivers-zone-table {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.65rem;
+  overflow-x: auto;
 }
 
 .drivers-zone-head,
 .drivers-zone-row {
   display: grid;
-  grid-template-columns: 1.35fr 1fr 1fr 1fr 1fr 1fr;
-  gap: 0.75rem;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(135px, 0.9fr) minmax(150px, 1fr) minmax(160px, 0.95fr) minmax(145px, 0.9fr) minmax(210px, 1.5fr) minmax(160px, 1fr);
+  gap: 0.8rem;
   align-items: center;
 }
 
@@ -499,16 +500,17 @@
 }
 
 .drivers-zone-row {
-  padding: 0.9rem;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  min-width: 1220px;
+  padding: 1rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.66), rgba(30, 41, 59, 0.5));
   transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
 .drivers-zone-row:hover {
-  transform: translateY(-1px);
-  border-color: rgba(56, 189, 248, 0.24);
+  transform: translateY(-2px);
+  border-color: rgba(56, 189, 248, 0.4);
 }
 
 .drivers-zone-row strong {
@@ -516,77 +518,165 @@
   color: var(--text-primary);
 }
 
-.drivers-zone-row small,
-.driver-action-note {
+.drivers-zone-row small {
   display: block;
   color: var(--text-secondary);
 }
 
-.driver-status-pill {
-  width: fit-content;
-  padding: 0.35rem 0.65rem;
-  border-radius: 999px;
-  font-size: 0.76rem;
+.drivers-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.summary-card {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.85rem;
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.2rem;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.summary-card .summary-label {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summary-card .summary-value {
+  color: var(--text-primary);
+  font-size: 1.12rem;
   font-weight: 800;
 }
 
-.driver-status-pill.disponible {
+.summary-card.available { border-color: rgba(34, 197, 94, 0.35); }
+.summary-card.in-delivery { border-color: rgba(59, 130, 246, 0.35); }
+.summary-card.no-location { border-color: rgba(239, 68, 68, 0.35); }
+.summary-card.outside-radius { border-color: rgba(245, 158, 11, 0.35); }
+.summary-card.can-optimize { border-color: rgba(16, 185, 129, 0.35); }
+
+.driver-operational-badge {
+  width: fit-content;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.driver-operational-badge.driver-operational-success {
   color: #bbf7d0;
   background: rgba(34, 197, 94, 0.13);
   border: 1px solid rgba(34, 197, 94, 0.25);
 }
 
-.driver-status-pill.no-disponible {
+.driver-operational-badge.driver-operational-danger {
   color: #fecaca;
   background: rgba(239, 68, 68, 0.13);
   border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
-.driver-status-pill.sin-coordenadas {
-  color: #fde68a;
-  background: rgba(245, 158, 11, 0.13);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-}
-
-.driver-status-pill.en-entrega {
+.driver-operational-badge.driver-operational-warning {
   color: #bfdbfe;
   background: rgba(59, 130, 246, 0.13);
   border: 1px solid rgba(59, 130, 246, 0.25);
 }
 
-.driver-status-pill.inactivo {
+.driver-operational-badge.driver-operational-secondary {
   color: #cbd5e1;
   background: rgba(148, 163, 184, 0.13);
   border: 1px solid rgba(148, 163, 184, 0.25);
 }
 
-.technical-diagnostics {
-  margin-top: 0.85rem;
-  padding: 0.85rem;
-  border-radius: 0.75rem;
-  color: var(--text-secondary);
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 0.86rem;
+.location-badge,
+.capability-badge,
+.assignment-badge,
+.active-route-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
+  font-size: 0.76rem;
+  padding: 0.34rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
 }
 
-.technical-diagnostics summary {
-  cursor: pointer;
-  color: var(--text-primary);
-  font-weight: 800;
+.location-badge.ubicacion-valida {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.13);
+  border-color: rgba(34, 197, 94, 0.25);
 }
 
-.technical-diagnostics p {
-  margin: 0.45rem 0 0;
+.location-badge.sin-ubicacion {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.13);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.location-badge.fuera-radio {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.active-route-badge {
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.32);
+}
+
+.capability-badge.can-receive {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.capability-badge.cannot-receive {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.assignment-badge.assignment-both {
+  color: #d1fae5;
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.34);
+}
+
+.assignment-badge.assignment-manual {
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.17);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.assignment-badge.assignment-none {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.32);
+}
+
+.motivo-cell {
+  max-width: 320px;
+}
+
+.motivo-cell small {
+  line-height: 1.35;
 }
 
 @media (max-width: 900px) {
+  .drivers-summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .drivers-zone-head {
     display: none;
   }
 
   .drivers-zone-row {
     grid-template-columns: 1fr;
+    min-width: 100%;
   }
 }
 

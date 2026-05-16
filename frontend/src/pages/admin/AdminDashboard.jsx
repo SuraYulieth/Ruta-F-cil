@@ -74,29 +74,130 @@ export const AdminDashboard = () => {
     return acc;
   }, new Map());
 
-  const getDriverOperationalStatus = (driver) => {
-    const status = normalizeText(driver.status || driver.estado);
-    const hasCoordinates = Boolean(getDriverCoordinates(driver));
-    const activeCount = activeOrdersByDriver.get(Number(driver.id)) || 0;
+  const activeRouteInfoByDriver = activeOrders.reduce((acc, order) => {
+    const driverId = Number(getOrderDriverId(order));
+    if (!Number.isFinite(driverId)) {
+      return acc;
+    }
 
-    if (activeCount > 0 || status === 'ocupado') {
-      return { label: 'En entrega', className: 'en-entrega' };
-    }
-    if (driver.disponible !== true) {
-      return { label: 'No disponible', className: 'no-disponible' };
-    }
-    if (!['disponible', 'activo', 'active', 'available'].includes(status)) {
-      return { label: 'Inactivo', className: 'inactivo' };
-    }
-    if (!hasCoordinates) {
-      return { label: 'Sin coordenadas', className: 'sin-coordenadas' };
-    }
-    return { label: 'Disponible', className: 'disponible' };
+    const current = acc.get(driverId) || { routeId: null, orderCount: 0 };
+    const routeId = getOrderRouteId(order);
+    acc.set(driverId, {
+      routeId: current.routeId || routeId || null,
+      orderCount: current.orderCount + 1,
+    });
+
+    return acc;
+  }, new Map());
+
+  const isOperationallyAvailableState = (status) => ['disponible', 'activo', 'active', 'available'].includes(status);
+  const isDriverOutsideRadius = (driver) => {
+    const distance = Number(driver?.distancia_al_centro_demanda_km);
+    const maxRadius = Number(driver?.radio_maximo_km);
+    return Number.isFinite(distance) && Number.isFinite(maxRadius) && distance > maxRadius;
   };
 
-  const getDriverAvailabilityText = (driver) => driver.disponible === true ? 'Disponible' : 'No disponible';
-  const canReceiveManualOrders = (driver) => isAvailableDriver(driver);
-  const canOptimizeRoutes = (driver) => isAvailableDriver(driver) && Boolean(getDriverCoordinates(driver));
+  const getDriverLocationStatus = (driver) => {
+    const coords = getDriverCoordinates(driver);
+    if (!coords) return { label: 'Sin ubicación', icon: '🔴', className: 'sin-ubicacion' };
+    if (isDriverOutsideRadius(driver)) {
+      return { label: 'Fuera del radio', icon: '🟡', className: 'fuera-radio' };
+    }
+    return { label: 'Ubicación válida', icon: '🟢', className: 'ubicacion-valida' };
+  };
+
+  const getDriverOperationalStatus = (driver) => {
+    const activeCount = activeOrdersByDriver.get(Number(driver.id)) || 0;
+    const status = normalizeText(driver.status || driver.estado);
+    const isManuallyDisabled = driver.disponible !== true;
+    const isInactive = !isOperationallyAvailableState(status);
+
+    if (activeCount > 0 || status === 'ocupado') {
+      return { label: 'En entrega', icon: '🚗', className: 'en-entrega', badge: 'warning' };
+    }
+    if (isManuallyDisabled) {
+      return { label: 'No disponible', icon: '🔴', className: 'no-disponible', badge: 'danger' };
+    }
+    if (isInactive) {
+      return { label: 'Inactivo', icon: '⚪', className: 'inactivo', badge: 'secondary' };
+    }
+    return { label: 'Disponible', icon: '🟢', className: 'disponible', badge: 'success' };
+  };
+
+  const canDriverReceiveOrders = (driver) => {
+    const activeCount = activeOrdersByDriver.get(Number(driver.id)) || 0;
+    const status = normalizeText(driver.status || driver.estado);
+    const hasCoordinates = Boolean(getDriverCoordinates(driver));
+    const outsideRadius = isDriverOutsideRadius(driver);
+
+    return (
+      driver.disponible === true
+      && isOperationallyAvailableState(status)
+      && activeCount === 0
+      && hasCoordinates
+      && !outsideRadius
+    );
+  };
+
+  const canOptimizeRoutes = (driver) => {
+    return canDriverReceiveOrders(driver);
+  };
+
+  const getDriverReason = (driver) => {
+    const activeCount = activeOrdersByDriver.get(Number(driver.id)) || 0;
+    const hasCoordinates = Boolean(getDriverCoordinates(driver));
+    const outsideRadius = isDriverOutsideRadius(driver);
+
+    if (activeCount > 0) {
+      return 'Está entregando una ruta activa.';
+    }
+    if (driver.disponible !== true) {
+      return 'Fue deshabilitado manualmente.';
+    }
+    const status = normalizeText(driver.status || driver.estado);
+    if (!isOperationallyAvailableState(status)) {
+      return 'Estado inactivo en sistema.';
+    }
+    if (!hasCoordinates) {
+      return 'No tiene coordenadas registradas.';
+    }
+    if (outsideRadius) {
+      return 'Está fuera del radio permitido.';
+    }
+    return 'Disponible para nuevas asignaciones.';
+  };
+
+  const getDriverAssignmentType = (driver) => {
+    const operationalStatus = getDriverOperationalStatus(driver);
+    const hasCoordinates = Boolean(getDriverCoordinates(driver));
+
+    if (operationalStatus.label === 'En entrega' || operationalStatus.label === 'No disponible') {
+      return { label: 'No asignable', className: 'none' };
+    }
+    if (canOptimizeRoutes(driver)) {
+      return { label: 'Manual y optimización', className: 'both' };
+    }
+    if (driver.disponible === true && hasCoordinates) {
+      return { label: 'Manual y optimización', className: 'both' };
+    }
+    if (driver.disponible === true && !hasCoordinates) {
+      return { label: 'Solo manual', className: 'manual' };
+    }
+    return { label: 'No asignable', className: 'none' };
+  };
+
+  const driverStats = drivers.reduce((acc, driver) => {
+    const operationalStatus = getDriverOperationalStatus(driver);
+    const locationStatus = getDriverLocationStatus(driver);
+
+    acc.total += 1;
+    if (operationalStatus.label === 'Disponible') acc.available += 1;
+    if (operationalStatus.label === 'En entrega') acc.inDelivery += 1;
+    if (locationStatus.label === 'Sin ubicación') acc.noLocation += 1;
+    if (locationStatus.label === 'Fuera del radio') acc.outsideRadius += 1;
+    if (canOptimizeRoutes(driver)) acc.canOptimize += 1;
+    return acc;
+  }, { total: 0, available: 0, inDelivery: 0, noLocation: 0, outsideRadius: 0, canOptimize: 0 });
 
   const handleOpenManualAssign = (order) => {
     setAssignmentError('');
@@ -292,57 +393,112 @@ export const AdminDashboard = () => {
 
         <section className="panel">
           <h2>Repartidores en zona <span className="count">{drivers.length}</span></h2>
-          <div className="drivers-zone-table">
+          {/* Resumen estadísticas */}
+          <div className="drivers-summary-cards mt-4">
+            <div className="summary-card">
+              <span className="summary-label">Total</span>
+              <span className="summary-value">{driverStats.total}</span>
+            </div>
+            <div className="summary-card available">
+              <span className="summary-label">Disponibles</span>
+              <span className="summary-value">🟢 {driverStats.available}</span>
+            </div>
+            <div className="summary-card in-delivery">
+              <span className="summary-label">En entrega</span>
+              <span className="summary-value">🚗 {driverStats.inDelivery}</span>
+            </div>
+            <div className="summary-card no-location">
+              <span className="summary-label">Sin ubicación</span>
+              <span className="summary-value">🔴 {driverStats.noLocation}</span>
+            </div>
+            <div className="summary-card outside-radius">
+              <span className="summary-label">Fuera de radio</span>
+              <span className="summary-value">🟡 {driverStats.outsideRadius}</span>
+            </div>
+            <div className="summary-card can-optimize">
+              <span className="summary-label">Aptos optimización</span>
+              <span className="summary-value">✨ {driverStats.canOptimize}</span>
+            </div>
+          </div>
+
+          {/* Tabla rediseñada */}
+          <div className="drivers-zone-table mt-4">
             <div className="drivers-zone-head">
               <span>Repartidor</span>
-              <span>Estado</span>
-              <span>Disponibilidad</span>
-              <span>Coordenadas</span>
+              <span>Estado operativo</span>
+              <span>Ubicación</span>
+              <span>Ruta activa</span>
               <span>Puede recibir pedidos</span>
-              <span>Accion</span>
+              <span>Motivo</span>
+              <span>Tipo de asignación</span>
             </div>
             {drivers.map((driver) => {
               const operationalStatus = getDriverOperationalStatus(driver);
-              const hasCoordinates = Boolean(getDriverCoordinates(driver));
-              const canReceive = canReceiveManualOrders(driver);
-              const canOptimize = canOptimizeRoutes(driver);
+              const locationStatus = getDriverLocationStatus(driver);
+              const routeInfo = activeRouteInfoByDriver.get(Number(driver.id)) || { routeId: null, orderCount: 0 };
+              const canReceive = canDriverReceiveOrders(driver);
+              const assignmentType = getDriverAssignmentType(driver);
+              const reason = getDriverReason(driver);
 
               return (
                 <div key={driver.id} className="drivers-zone-row">
-                  <div>
+                  {/* Repartidor */}
+                  <div className="driver-name-cell">
                     <strong>{driver.name || driver.nombre || 'Repartidor'}</strong>
-                    <small>{driver.location || driver.ubicacion || 'Sin ubicacion'}</small>
                   </div>
-                  <span className={`driver-status-pill ${operationalStatus.className}`}>
-                    {operationalStatus.label}
-                  </span>
-                  <span>{getDriverAvailabilityText(driver)}</span>
-                  <span className={`driver-status-pill ${hasCoordinates ? 'disponible' : 'sin-coordenadas'}`}>
-                    {hasCoordinates ? 'Si' : 'Sin coordenadas'}
-                  </span>
-                  <span>{canReceive ? 'Si' : 'No'}</span>
-                  <span className="driver-action-note">
-                    {canOptimize ? 'Manual y optimizacion' : canReceive ? 'Solo manual' : 'No asignable'}
-                  </span>
+
+                  {/* Estado operativo */}
+                  <div>
+                    <span className={`driver-operational-badge driver-operational-${operationalStatus.badge}`} title={operationalStatus.label}>
+                      {operationalStatus.icon} {operationalStatus.label}
+                    </span>
+                  </div>
+
+                  {/* Ubicación */}
+                  <div title={locationStatus.label}>
+                    <span className={`location-badge ${locationStatus.className}`}>
+                      {locationStatus.icon} {locationStatus.label}
+                    </span>
+                  </div>
+
+                  {/* Ruta activa */}
+                  <div>
+                    {routeInfo.orderCount > 0 ? (
+                      <span className="active-route-badge">
+                        Sí {routeInfo.routeId ? `· Ruta #${routeInfo.routeId}` : ''} · {routeInfo.orderCount} pedido{routeInfo.orderCount > 1 ? 's' : ''}
+                      </span>
+                    ) : (
+                      <span className="text-muted">No</span>
+                    )}
+                  </div>
+
+                  {/* Puede recibir */}
+                  <div>
+                    <span
+                      className={`capability-badge ${canReceive ? 'can-receive' : 'cannot-receive'}`}
+                      title={reason}
+                    >
+                      {canReceive ? '🟢 Sí puede' : '🔴 No puede'}
+                    </span>
+                  </div>
+
+                  {/* Motivo */}
+                  <div className="motivo-cell">
+                    <small title={reason}>{reason}</small>
+                  </div>
+
+                  {/* Tipo asignación */}
+                  <div>
+                    <span className={`assignment-badge assignment-${assignmentType.className}`}>
+                      {assignmentType.label}
+                    </span>
+                  </div>
                 </div>
               );
             })}
           </div>
 
-          {/* {drivers.length > 0 && (
-            <details className="technical-diagnostics">
-              <summary>Ver diagnostico tecnico</summary>
-              {drivers.map((driver) => {
-                const operationalStatus = getDriverOperationalStatus(driver);
-                return (
-                  <p key={driver.id}>
-                    {driver.name || driver.nombre || 'Repartidor'}: {operationalStatus.label}
-                    {canOptimizeRoutes(driver) ? ' - habilitado para optimizacion.' : ' - revisar disponibilidad o coordenadas.'}
-                  </p>
-                );
-              })}
-            </details>
-          )} */}
+
 
           <div className="actions">
             <button
