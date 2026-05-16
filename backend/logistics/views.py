@@ -20,7 +20,8 @@ from .serializers import (
     RouteOptimizeRequestSerializer, AssignPedidoRequestSerializer,
     PedidoDetailResponseSerializer, RepartidorInfoSerializer,
     DriverDetailSerializer, DriverLocationUpdateSerializer, DriverAvailabilitySerializer,
-    DriverMyOrdersSerializer, DriverMyRoutesSerializer, OrderStateChangeSerializer
+    DriverMyOrdersSerializer, DriverMyRoutesSerializer, OrderStateChangeSerializer,
+    AdminDriverLocationUpdateSerializer,
 )
 from .models import RutaParada
 from .permissions import IsDriver, IsAdmin
@@ -283,6 +284,58 @@ class PedidoViewSet(viewsets.ModelViewSet):
 class RepartidorViewSet(viewsets.ModelViewSet):
     queryset = Repartidor.objects.all()
     serializer_class = RepartidorSerializer
+
+    @action(detail=True, methods=['patch'], url_path='location', permission_classes=[IsAuthenticated, IsAdmin])
+    def update_location(self, request, pk=None):
+        repartidor = self.get_object()
+        serializer = AdminDriverLocationUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        lat = serializer.validated_data['latitud_actual']
+        lng = serializer.validated_data['longitud_actual']
+
+        repartidor.latitud_actual = lat
+        repartidor.longitud_actual = lng
+
+        # Compatibilidad hacia atrás en estructuras existentes de ubicación.
+        ultima = repartidor.ultima_ubicacion or {}
+        if not isinstance(ultima, dict):
+            ultima = {}
+        ultima.update({
+            'latitud': float(lat),
+            'longitud': float(lng),
+            'lat': float(lat),
+            'lng': float(lng),
+        })
+        repartidor.ultima_ubicacion = ultima
+        repartidor.ultima_conexion = timezone.now()
+
+        update_fields = ['latitud_actual', 'longitud_actual', 'ultima_ubicacion', 'ultima_conexion']
+        if hasattr(repartidor, 'latitud'):
+            repartidor.latitud = lat
+            update_fields.append('latitud')
+        if hasattr(repartidor, 'longitud'):
+            repartidor.longitud = lng
+            update_fields.append('longitud')
+
+        repartidor.save(update_fields=update_fields)
+
+        user = repartidor.user
+        return Response(
+            {
+                'message': 'Ubicación del repartidor actualizada correctamente.',
+                'repartidor': {
+                    'id': repartidor.id,
+                    'user_id': repartidor.user_id,
+                    'nombre': user.nombre or user.username,
+                    'latitud_actual': float(repartidor.latitud_actual),
+                    'longitud_actual': float(repartidor.longitud_actual),
+                    'disponible': bool(repartidor.disponible),
+                    'estado': user.estado,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=['get'], url_path='diagnostics')
     def diagnostics(self, request):

@@ -50,6 +50,7 @@ export const AdminDashboard = () => {
   const [importSummary, setImportSummary] = useState(null);
   const [optimization, setOptimization] = useState(null);
   const [driverLocation, setDriverLocation] = useState({ lat: 4.7110, lng: -74.0721 });
+  const [selectedOptimizerDriver, setSelectedOptimizerDriver] = useState(null);
   const [manualAssignModal, setManualAssignModal] = useState({ isOpen: false, order: null });
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [assignmentError, setAssignmentError] = useState('');
@@ -303,7 +304,10 @@ export const AdminDashboard = () => {
         <PendingOrdersMap
           orders={safeOrders}
           warehouses={safeWarehouses}
-          driverLocation={optimization?.optimizer?.start || driverLocation}
+          driverLocation={driverLocation}
+          selectedDriver={selectedOptimizerDriver}
+          isAdminMode
+          onDriverLocationDraftChange={setDriverLocation}
           selectedOrderIds={optimization?.optimizer?.pedidos_seleccionados || []}
           selectedWarehouseId={optimization?.optimizer?.aliado_id}
           routeGeometry={optimization?.optimizer?.geometria}
@@ -314,6 +318,8 @@ export const AdminDashboard = () => {
         <RouteOptimizerPanel
           onDriverLocationChange={setDriverLocation}
           onOptimized={setOptimization}
+          externalDriverLocation={driverLocation}
+          onSelectedDriverChange={setSelectedOptimizerDriver}
         />
       </main>
 

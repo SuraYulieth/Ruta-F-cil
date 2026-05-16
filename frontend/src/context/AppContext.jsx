@@ -191,11 +191,27 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const updateDriverLocation = async (latitud, longitud) => {
+  const updateMyDriverLocation = async (latitud, longitud) => {
     const response = await api.updateDriverLocation(latitud, longitud);
     if (response?.repartidor) {
       setDriverProfile(response.repartidor);
     }
+    return response;
+  };
+
+  const updateDriverLocation = async (driverId, latitud, longitud) => {
+    if (!driverId) {
+      throw new Error('Debe seleccionar un repartidor para actualizar su ubicación.');
+    }
+
+    const response = await api.updateDriverLocationByAdmin(driverId, {
+      latitud_actual: latitud,
+      longitud_actual: longitud,
+      latitud,
+      longitud,
+    });
+
+    await refreshData();
     return response;
   };
 
@@ -394,6 +410,7 @@ export const AppProvider = ({ children }) => {
       loadDriverDashboard,
       toggleAvailability,
       updateDriverLocation,
+      updateMyDriverLocation,
       startOrder,
       deliverOrder,
       completeOrder,

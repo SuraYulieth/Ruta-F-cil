@@ -271,6 +271,43 @@ class RepartidorSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class AdminDriverLocationUpdateSerializer(serializers.Serializer):
+    latitud_actual = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=8,
+        required=False,
+        allow_null=True,
+    )
+    longitud_actual = serializers.DecimalField(
+        max_digits=11,
+        decimal_places=8,
+        required=False,
+        allow_null=True,
+    )
+    latitud = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=8,
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+    longitud = serializers.DecimalField(
+        max_digits=11,
+        decimal_places=8,
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+
+    def validate(self, attrs):
+        lat = attrs.get('latitud_actual', attrs.get('latitud'))
+        lng = attrs.get('longitud_actual', attrs.get('longitud'))
+        validate_lat_lng(lat, lng, required=True)
+        attrs['latitud_actual'] = lat
+        attrs['longitud_actual'] = lng
+        return attrs
+
+
 class ClienteSerializer(serializers.ModelSerializer):
     nombre = serializers.CharField(
         error_messages={

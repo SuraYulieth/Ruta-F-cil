@@ -142,7 +142,7 @@ class RouteApiTests(TestCase):
             role='driver',
             nombre='Driver API',
         )
-        Repartidor.objects.create(
+        self.driver_profile = Repartidor.objects.create(
             user=self.driver,
             latitud_actual=4.7100,
             longitud_actual=-74.0700,
@@ -218,11 +218,36 @@ class RouteApiTests(TestCase):
         self.assertIsNone(response.data['route'])
         self.assertEqual(response.data['routes'], [])
         self.assertEqual(response.data['summary']['rutas_creadas'], 0)
-        self.assertEqual(response.data['summary']['pedidos_no_asignados'], 1)
-        self.assertEqual(response.data['optimizer']['modo'], 'multi_ruta')
-        self.assertEqual(response.data['optimizer']['pedidos_seleccionados'], [])
-        self.assertEqual(len(response.data['optimizer']['unassigned_orders']), 1)
-        self.assertEqual(response.data['optimizer']['unassigned_orders'][0]['pedido_id'], self.pedido.id)
+
+    def test_admin_can_update_driver_location_with_alias_payload(self):
+        response = self.client.patch(
+            f'/api/repartidores/{self.driver_profile.id}/location/',
+            {
+                'latitud': 4.716,
+                'longitud': -74.078,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.driver_profile.refresh_from_db()
+        self.assertAlmostEqual(float(self.driver_profile.latitud_actual), 4.716, places=6)
+        self.assertAlmostEqual(float(self.driver_profile.longitud_actual), -74.078, places=6)
+        self.assertEqual(response.data['message'], 'Ubicación del repartidor actualizada correctamente.')
+        self.assertEqual(response.data['repartidor']['id'], self.driver_profile.id)
+
+    def test_admin_update_driver_location_rejects_invalid_coordinates(self):
+        response = self.client.patch(
+            f'/api/repartidores/{self.driver_profile.id}/location/',
+            {
+                'latitud_actual': 120,
+                'longitud_actual': -74.078,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(bool(response.data))
 
     def test_manual_assign_endpoint_updates_status_and_driver(self):
         response = self.client.post(

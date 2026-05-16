@@ -105,6 +105,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ latitud, longitud }),
   }),
+  updateDriverLocationByAdmin: (driverProfileId, payload) => request(`/repartidores/${driverProfileId}/location/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
   startDriverOrder: (orderId) => request(`/drivers/me/orders/${orderId}/start/`, {
     method: 'POST',
   }),

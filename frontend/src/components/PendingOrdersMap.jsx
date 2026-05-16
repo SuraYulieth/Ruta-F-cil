@@ -62,6 +62,9 @@ export const PendingOrdersMap = ({
   warehouses = [],
   selectedWarehouseId,
   driverLocation = DEFAULT_DRIVER_LOCATION,
+  selectedDriver = null,
+  isAdminMode = false,
+  onDriverLocationDraftChange,
   optimization = null,
   routes: persistedRoutes = [],
 }) => {
@@ -254,7 +257,15 @@ export const PendingOrdersMap = ({
             <MarkerF
               position={driverPosition}
               label={{ text: 'R', color: '#ffffff', fontWeight: '700' }}
-              title="Ubicacion inicial del repartidor"
+              title={`Ubicación ${selectedDriver?.name || selectedDriver?.nombre || 'inicial'} del repartidor`}
+              draggable={Boolean(isAdminMode && selectedDriver)}
+              onDragEnd={(event) => {
+                if (!onDriverLocationDraftChange) return;
+                const nextLat = event?.latLng?.lat?.();
+                const nextLng = event?.latLng?.lng?.();
+                if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return;
+                onDriverLocationDraftChange({ lat: nextLat, lng: nextLng });
+              }}
             />
 
             {demandCenter?.lat !== null && demandCenter?.lng !== null && (
