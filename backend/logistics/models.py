@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = [
@@ -31,6 +32,10 @@ class Repartidor(models.Model):
     longitud_actual = models.DecimalField(max_digits=11, decimal_places=8, null=True, blank=True)
     capacidad_maxima_kg = models.DecimalField(max_digits=8, decimal_places=2, default=15)
     volumen_maximo_m3 = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    # NUEVOS CAMPOS
+    disponible = models.BooleanField(default=False, help_text="¿Disponible para recibir nuevas rutas?")
+    ultima_ubicacion = models.JSONField(default=dict, blank=True, help_text="Última ubicación: {'lat': ..., 'lng': ...}")
+    ultima_conexion = models.DateTimeField(null=True, blank=True, help_text="Última conexión registrada")
 
     def __str__(self):
         return self.user.nombre

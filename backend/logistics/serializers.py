@@ -799,3 +799,128 @@ class PedidoDetailResponseSerializer(serializers.ModelSerializer):
     def get_ruta_id(self, obj):
         first_stop = obj.paradas_ruta.order_by('ruta_id').first()
         return first_stop.ruta_id if first_stop else None
+
+
+# ============================================================================
+# SERIALIZERS PARA DRIVER (REPARTIDOR)
+# ============================================================================
+
+class DriverDetailSerializer(serializers.ModelSerializer):
+    """Información detallada del repartidor autenticado."""
+    user_id = serializers.SerializerMethodField()
+    nombre = serializers.CharField(source='user.nombre', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    estado = serializers.CharField(source='user.estado', read_only=True)
+    role = serializers.CharField(source='user.role', read_only=True)
+
+    class Meta:
+        model = Repartidor
+        fields = [
+            'id', 'user_id', 'nombre', 'email', 'username', 'estado', 'role',
+            'telefono', 'latitud_actual', 'longitud_actual',
+            'capacidad_maxima_kg', 'volumen_maximo_m3',
+            'disponible', 'ultima_ubicacion', 'ultima_conexion'
+        ]
+        read_only_fields = fields
+
+    def get_user_id(self, obj):
+        return obj.user.id
+
+
+class DriverLocationUpdateSerializer(serializers.Serializer):
+    """Actualizar ubicación del repartidor."""
+    latitud = serializers.DecimalField(max_digits=10, decimal_places=8)
+    longitud = serializers.DecimalField(max_digits=11, decimal_places=8)
+
+    def validate(self, attrs):
+        lat = float(attrs.get('latitud'))
+        lng = float(attrs.get('longitud'))
+        if not (-90 <= lat <= 90):
+            raise serializers.ValidationError({'latitud': 'Latitud debe estar entre -90 y 90'})
+        if not (-180 <= lng <= 180):
+            raise serializers.ValidationError({'longitud': 'Longitud debe estar entre -180 y 180'})
+        return attrs
+
+
+class DriverAvailabilitySerializer(serializers.Serializer):
+    """Cambiar disponibilidad del repartidor."""
+    disponible = serializers.BooleanField()
+
+
+class DriverMyOrdersSerializer(serializers.ModelSerializer):
+    """Pedidos asignados al repartidor."""
+    cliente_nombre = serializers.CharField(source='cliente.nombre', read_only=True)
+    cliente_telefono = serializers.CharField(source='cliente.telefono', read_only=True)
+    direccion = serializers.CharField(source='cliente.direccion', read_only=True)
+    latitud = serializers.DecimalField(source='cliente.latitud', max_digits=10, decimal_places=8, read_only=True)
+    longitud = serializers.DecimalField(source='cliente.longitud', max_digits=11, decimal_places=8, read_only=True)
+    ruta_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Pedido
+        fields = [
+            'id', 'cliente_nombre', 'cliente_telefono', 'direccion', 'latitud', 'longitud',
+            'estado', 'prioridad', 'peso_total_kg', 'volumen_total_m3',
+            'ventana_entrega_inicio', 'ventana_entrega_fin', 'ruta_id'
+        ]
+        read_only_fields = fields
+
+    def get_ruta_id(self, obj):
+        """Obtener ID de la ruta asociada."""
+        first_route = obj.paradas_ruta.values('ruta_id').first()
+        return first_route['ruta_id'] if first_route else None
+
+
+class RutaParadaDetailSerializer(serializers.ModelSerializer):
+    """Detalle de una parada en la ruta."""
+    cliente_nombre = serializers.SerializerMethodField()
+    cliente_telefono = serializers.SerializerMethodField()
+    cliente_direccion = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RutaParada
+        fields = [
+            'id', 'pedido', 'orden', 'latitud', 'longitud',
+            'distancia_desde_anterior_km', 'tiempo_estimado_desde_anterior_mins',
+            'estado', 'cliente_nombre', 'cliente_telefono', 'cliente_direccion'
+        ]
+        read_only_fields = fields
+
+    def get_cliente_nombre(self, obj):
+        return obj.pedido.cliente.nombre
+
+    def get_cliente_telefono(self, obj):
+        return obj.pedido.cliente.telefono
+
+    def get_cliente_direccion(self, obj):
+        return obj.pedido.cliente.direccion
+
+
+class DriverMyRoutesSerializer(serializers.ModelSerializer):
+    """Rutas del repartidor."""
+    repartidor_nombre = serializers.CharField(source='repartidor.nombre', read_only=True)
+    paradas = RutaParadaDetailSerializer(many=True, read_only=True)
+    total_paradas = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Ruta
+        fields = [
+            'id', 'repartidor_nombre', 'estado_ruta',
+            'latitud_inicio', 'longitud_inicio',
+            'distancia_km', 'tiempo_estimado_mins',
+            'capacidad_usada_kg', 'geometria',
+            'paradas', 'total_paradas', 'fecha_creacion'
+        ]
+        read_only_fields = fields
+
+    def get_total_paradas(self, obj):
+        return obj.paradas.count()
+
+
+class OrderStateChangeSerializer(serializers.Serializer):
+    """Cambiar estado de un pedido."""
+    estado = serializers.ChoiceField(
+        choices=['Asignado', 'En ruta', 'Entregado', 'Cancelado']
+    )
+    comentarios = serializers.CharField(required=False, allow_blank=True)

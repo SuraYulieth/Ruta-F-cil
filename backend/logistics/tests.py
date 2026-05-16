@@ -195,6 +195,25 @@ class RouteApiTests(TestCase):
         self.assertEqual(response.data['optimizer']['pedidos_seleccionados'], [self.pedido.id])
         self.assertEqual(response.data['route']['repartidor'], self.driver.id)
 
+    def test_optimize_multi_route_without_available_drivers_returns_unassigned_orders(self):
+        Repartidor.objects.all().delete()
+
+        response = self.client.post('/api/routes/optimize/', {
+            'modo': 'multi_ruta',
+            'pedidos_candidatos': [self.pedido.id],
+            'capacidad_maxima': 5,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data['route'])
+        self.assertEqual(response.data['routes'], [])
+        self.assertEqual(response.data['summary']['rutas_creadas'], 0)
+        self.assertEqual(response.data['summary']['pedidos_no_asignados'], 1)
+        self.assertEqual(response.data['optimizer']['modo'], 'multi_ruta')
+        self.assertEqual(response.data['optimizer']['pedidos_seleccionados'], [])
+        self.assertEqual(len(response.data['optimizer']['unassigned_orders']), 1)
+        self.assertEqual(response.data['optimizer']['unassigned_orders'][0]['pedido_id'], self.pedido.id)
+
     def test_manual_assign_endpoint_updates_status_and_driver(self):
         response = self.client.post(
             f'/api/pedidos/{self.pedido.id}/assign/',

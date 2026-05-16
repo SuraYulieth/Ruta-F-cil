@@ -9,6 +9,8 @@ from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.authtoken.models import Token
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import authenticate
 from django.db import transaction
 from .models import CustomUser, Aliado, Repartidor, Cliente, Pedido, Ruta
@@ -16,13 +18,17 @@ from .serializers import (
     CustomUserSerializer, LoginSerializer, AliadoSerializer, 
     RepartidorSerializer, ClienteSerializer, PedidoSerializer, RutaSerializer,
     RouteOptimizeRequestSerializer, AssignPedidoRequestSerializer,
-    PedidoDetailResponseSerializer, RepartidorInfoSerializer
+    PedidoDetailResponseSerializer, RepartidorInfoSerializer,
+    DriverDetailSerializer, DriverLocationUpdateSerializer, DriverAvailabilitySerializer,
+    DriverMyOrdersSerializer, DriverMyRoutesSerializer, OrderStateChangeSerializer
 )
 from .models import RutaParada
+from .permissions import IsDriver, IsAdmin
 from .services.ai_route_decision_service import AiRouteDecisionService
 from .services.excel_import_service import import_excel_file
 from .services.route_metrics_service import RouteMetricsService
 from .services.route_optimizer_service import RouteOptimizerService, to_decimal
+from django.utils import timezone
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ASSIGN_DEBUG_LOG_PATH = BACKEND_DIR / 'assign_debug.log'
@@ -39,6 +45,8 @@ def _append_debug_log(message: str):
 
 
 class LoginView(APIView):
+    permission_classes = [AllowAny]
+    
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
@@ -46,12 +54,26 @@ class LoginView(APIView):
             password = serializer.validated_data['password']
             user = authenticate(username=username, password=password)
             if user:
-                # Retornamos el objeto user tal como lo espera el frontend
+                # Obtener o crear token
+                token, created = Token.objects.get_or_create(user=user)
+                
+                # Preparar datos del usuario
                 user_data = CustomUserSerializer(user).data
-                # Frontend necesita 'name' en lugar de 'nombre'
+                # Adaptar campos para frontend
                 user_data['name'] = user_data.pop('nombre', '')
                 user_data['location'] = user_data.pop('ubicacion', 'Sin ubicación')
                 user_data['status'] = user_data.pop('estado', 'Disponible')
+                user_data['token'] = token.key
+                
+                # Si es repartidor, incluir info del Repartidor
+                if user.role == 'driver':
+                    try:
+                        repartidor = Repartidor.objects.get(user=user)
+                        user_data['repartidor_id'] = repartidor.id
+                        user_data['disponible'] = repartidor.disponible
+                    except Repartidor.DoesNotExist:
+                        pass
+                
                 return Response(user_data, status=status.HTTP_200_OK)
             return Response({"error": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -205,8 +227,9 @@ class AliadoViewSet(viewsets.ModelViewSet):
 class RutaViewSet(viewsets.ModelViewSet):
     queryset = Ruta.objects.select_related('repartidor', 'pedido').prefetch_related('paradas__pedido__cliente').all()
     serializer_class = RutaSerializer
+    permission_classes = []  # Permitir acceso sin autenticación, pero los métodos puede validar
 
-    @action(detail=False, methods=['post'], url_path='optimize')
+    @action(detail=False, methods=['post'], url_path='optimize', permission_classes=[])
     def optimize(self, request):
         request_serializer = RouteOptimizeRequestSerializer(data=request.data)
         request_serializer.is_valid(raise_exception=True)
@@ -480,6 +503,24 @@ class RutaViewSet(viewsets.ModelViewSet):
                 'explicacion': result.get('explicacion'),
             }
 
+        if result.get('modo') == 'multi_ruta':
+            return {
+                'modo': 'multi_ruta',
+                'routes': [],
+                'route': None,
+                'ruta_principal': None,
+                'unassigned_orders': result.get('unassigned_orders', []),
+                'pedidos_seleccionados': [],
+                'pedidos_descartados': result.get('pedidos_descartados', []),
+                'distancia_total_km': result.get('distancia_total_km', 0),
+                'duracion_total_mins': result.get('duracion_total_mins', 0),
+                'capacidad_total_usada_kg': result.get('capacidad_total_usada_kg', 0),
+                'summary': result.get('summary', {}),
+                'radio_permitido_km': result.get('radio_permitido_km'),
+                'radio_permitido_m2': result.get('radio_permitido_m2'),
+                'explicacion': result.get('explicacion'),
+            }
+
         return {
             'pedidos_seleccionados': [pedido.id for pedido in result['pedidos_seleccionados']],
             'orden_entrega': [
@@ -506,3 +547,240 @@ class RutaViewSet(viewsets.ModelViewSet):
             'geometria': result['geometria'],
             'explicacion': result['explicacion'],
         }
+
+
+# ============================================================================
+# DRIVER VIEWSET - ENDPOINTS ESPECÍFICOS PARA REPARTIDORES
+# ============================================================================
+
+class DriverViewSet(viewsets.ViewSet):
+    """
+    API endpoints específicos para repartidores.
+    Endpoints:
+    - GET /api/drivers/me/ - Info del driver autenticado
+    - POST /api/drivers/me/toggle-availability/ - Cambiar disponibilidad
+    - GET /api/drivers/me/orders/ - Pedidos asignados
+    - GET /api/drivers/me/routes/ - Rutas del driver
+    - POST /api/drivers/me/location/ - Actualizar ubicación
+    - POST /api/orders/{id}/start/ - Cambiar a "En ruta"
+    - POST /api/orders/{id}/deliver/ - Cambiar a "Entregado"
+    - POST /api/orders/{id}/complete/ - Completar pedido
+    """
+    permission_classes = [IsAuthenticated, IsDriver]
+
+    def list(self, request):
+        """Redirige a /drivers/me/"""
+        return self.me(request)
+
+    @action(detail=False, methods=['get'], url_path='me')
+    def me(self, request):
+        """Obtener información del repartidor autenticado."""
+        try:
+            repartidor = Repartidor.objects.get(user=request.user)
+            repartidor.ultima_conexion = timezone.now()
+            repartidor.save(update_fields=['ultima_conexion'])
+            serializer = DriverDetailSerializer(repartidor)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Repartidor.DoesNotExist:
+            return Response(
+                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'], url_path='toggle-availability')
+    def toggle_availability(self, request):
+        """Cambiar disponibilidad del repartidor."""
+        try:
+            repartidor = Repartidor.objects.get(user=request.user)
+            serializer = DriverAvailabilitySerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            disponible = serializer.validated_data['disponible']
+            repartidor.disponible = disponible
+            repartidor.ultima_conexion = timezone.now()
+            repartidor.save(update_fields=['disponible', 'ultima_conexion'])
+            
+            # Actualizar estado en CustomUser también
+            repartidor.user.estado = 'Disponible' if disponible else 'No disponible'
+            repartidor.user.save(update_fields=['estado'])
+            
+            message = "Ahora estás disponible para recibir pedidos." if disponible else "Ya no estás disponible para recibir pedidos."
+            return Response(
+                {
+                    "disponible": disponible,
+                    "mensaje": message,
+                    "repartidor": DriverDetailSerializer(repartidor).data
+                },
+                status=status.HTTP_200_OK
+            )
+        except Repartidor.DoesNotExist:
+            return Response(
+                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['get'], url_path='orders')
+    def my_orders(self, request):
+        """Listar pedidos asignados al repartidor."""
+        try:
+            repartidor = Repartidor.objects.get(user=request.user)
+            
+            # Filtrar por estado si viene en query params
+            estado = request.query_params.get('estado')
+            orders_query = Pedido.objects.filter(repartidor=request.user).select_related('cliente')
+            
+            if estado:
+                orders_query = orders_query.filter(estado=estado)
+            
+            orders_query = orders_query.order_by('-fecha_creacion')
+            serializer = DriverMyOrdersSerializer(orders_query, many=True)
+            
+            # Actualizar última conexión
+            repartidor.ultima_conexion = timezone.now()
+            repartidor.save(update_fields=['ultima_conexion'])
+            
+            return Response(
+                {
+                    "total": orders_query.count(),
+                    "pedidos": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+        except Repartidor.DoesNotExist:
+            return Response(
+                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['get'], url_path='routes')
+    def my_routes(self, request):
+        """Listar rutas asignadas al repartidor."""
+        try:
+            repartidor = Repartidor.objects.get(user=request.user)
+            
+            # Filtrar por estado si viene en query params
+            estado_ruta = request.query_params.get('estado_ruta')
+            routes_query = Ruta.objects.filter(repartidor=request.user).prefetch_related('paradas__pedido__cliente')
+            
+            if estado_ruta:
+                routes_query = routes_query.filter(estado_ruta=estado_ruta)
+            
+            routes_query = routes_query.order_by('-fecha_creacion')
+            serializer = DriverMyRoutesSerializer(routes_query, many=True)
+            
+            # Actualizar última conexión
+            repartidor.ultima_conexion = timezone.now()
+            repartidor.save(update_fields=['ultima_conexion'])
+            
+            return Response(
+                {
+                    "total": routes_query.count(),
+                    "rutas": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+        except Repartidor.DoesNotExist:
+            return Response(
+                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'], url_path='location')
+    def update_location(self, request):
+        """Actualizar ubicación del repartidor."""
+        try:
+            repartidor = Repartidor.objects.get(user=request.user)
+            serializer = DriverLocationUpdateSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            lat = serializer.validated_data['latitud']
+            lng = serializer.validated_data['longitud']
+            
+            repartidor.latitud_actual = lat
+            repartidor.longitud_actual = lng
+            repartidor.ultima_ubicacion = {
+                'latitud': float(lat),
+                'longitud': float(lng),
+                'timestamp': timezone.now().isoformat()
+            }
+            repartidor.ultima_conexion = timezone.now()
+            repartidor.save(update_fields=['latitud_actual', 'longitud_actual', 'ultima_ubicacion', 'ultima_conexion'])
+            
+            return Response(
+                {
+                    "mensaje": "Ubicación actualizada correctamente",
+                    "repartidor": DriverDetailSerializer(repartidor).data
+                },
+                status=status.HTTP_200_OK
+            )
+        except Repartidor.DoesNotExist:
+            return Response(
+                {"error": "El usuario no tiene perfil de repartidor asignado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'], url_path='orders/(?P<order_id>[0-9]+)/start')
+    def order_start(self, request, order_id=None):
+        """Cambiar estado de pedido a 'En ruta'."""
+        try:
+            order = Pedido.objects.get(id=order_id, repartidor=request.user)
+            
+            if order.estado == 'En ruta':
+                return Response(
+                    {"mensaje": "El pedido ya está en ruta"},
+                    status=status.HTTP_200_OK
+                )
+            
+            order.estado = 'En ruta'
+            order.save(update_fields=['estado'])
+            
+            # Actualizar parada si existe
+            from django.db.models import Q
+            RutaParada.objects.filter(pedido=order).update(estado='pendiente')
+            
+            return Response(
+                {
+                    "mensaje": "Pedido actualizado a 'En ruta'",
+                    "pedido": DriverMyOrdersSerializer(order).data
+                },
+                status=status.HTTP_200_OK
+            )
+        except Pedido.DoesNotExist:
+            return Response(
+                {"error": "Pedido no encontrado o no asignado a ti"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'], url_path='orders/(?P<order_id>[0-9]+)/deliver')
+    def order_deliver(self, request, order_id=None):
+        """Cambiar estado de pedido a 'Entregado'."""
+        try:
+            order = Pedido.objects.get(id=order_id, repartidor=request.user)
+            
+            if order.estado == 'Entregado':
+                return Response(
+                    {"mensaje": "El pedido ya fue entregado"},
+                    status=status.HTTP_200_OK
+                )
+            
+            order.estado = 'Entregado'
+            order.fecha_entrega = timezone.now()
+            order.save(update_fields=['estado', 'fecha_entrega'])
+            
+            # Actualizar parada si existe
+            RutaParada.objects.filter(pedido=order).update(estado='completada')
+            
+            return Response(
+                {
+                    "mensaje": "Pedido entregado exitosamente",
+                    "pedido": DriverMyOrdersSerializer(order).data
+                },
+                status=status.HTTP_200_OK
+            )
+        except Pedido.DoesNotExist:
+            return Response(
+                {"error": "Pedido no encontrado o no asignado a ti"},
+                status=status.HTTP_404_NOT_FOUND
+            )

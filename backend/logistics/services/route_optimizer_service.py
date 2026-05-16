@@ -333,8 +333,13 @@ class RouteOptimizerService:
         }
 
     def _driver_start(self, profile, latitud_inicial, longitud_inicial):
-        lat = latitud_inicial if latitud_inicial is not None else profile.latitud_actual
-        lng = longitud_inicial if longitud_inicial is not None else profile.longitud_actual
+        if latitud_inicial is not None and longitud_inicial is not None:
+            lat, lng = latitud_inicial, longitud_inicial
+        else:
+            coords = self._get_driver_coordinates(profile)
+            if coords is None:
+                raise ValueError(f'Repartidor {profile.user.nombre} no tiene coordenadas válidas.')
+            lat, lng = coords
         return GeoPoint(float(lat or 0), float(lng or 0))
 
     def _orders_centroid(self, candidates):
@@ -711,16 +716,44 @@ class RouteOptimizerService:
             },
         }
 
+    def _get_driver_coordinates(self, driver):
+        """
+        Extrae coordenadas del repartidor desde cualquier campo disponible.
+        Intenta en orden: latitud_actual, latitud, latitude.
+        """
+        lat = (
+            getattr(driver, 'latitud_actual', None)
+            or getattr(driver, 'latitud', None)
+            or getattr(driver, 'latitude', None)
+        )
+        lng = (
+            getattr(driver, 'longitud_actual', None)
+            or getattr(driver, 'longitud', None)
+            or getattr(driver, 'longitude', None)
+        )
+
+        if lat is None or lng is None:
+            return None
+
+        return (float(lat), float(lng))
+
     def _get_available_driver_profiles(self, repartidor_id, latitud_inicial, longitud_inicial):
         profiles = []
+        # Consultar todos los repartidores, sin filtrar por coordenadas aún
         queryset = Repartidor.objects.select_related('user').filter(
             user__role='driver',
-            user__estado='Disponible',
-            latitud_actual__isnull=False,
-            longitud_actual__isnull=False,
         )
 
         for profile in queryset:
+            # Verificar que el usuario sea disponible (case-insensitive)
+            if profile.user.estado.lower() != 'disponible':
+                continue
+
+            # Verificar que tenga coordenadas válidas usando el helper flexible
+            coords = self._get_driver_coordinates(profile)
+            if coords is None:
+                continue
+
             profiles.append(self._driver_profile_from_record(profile, None, None))
 
         if repartidor_id:
@@ -953,10 +986,17 @@ class RouteOptimizerService:
             'distancia_km': round(nearest_distance, 2) if nearest_distance is not None else None,
         }
 
-    def _format_unassigned_order(self, pedido, driver, motivo):
+    def _format_unassigned_order(self, pedido, repartidor=None, motivo="No fue posible asignar el pedido."):
+        cliente = getattr(pedido, "cliente", None)
+
         return {
-            'pedido_id': pedido.id,
-            'motivo': motivo,
+            "pedido_id": getattr(pedido, "id", None),
+            "cliente": getattr(cliente, "nombre", None) or getattr(cliente, "name", None) or "Cliente sin nombre",
+            "direccion": getattr(cliente, "direccion", None) or getattr(cliente, "address", None) or "",
+            "latitud": float(cliente.latitud) if cliente and cliente.latitud is not None else None,
+            "longitud": float(cliente.longitud) if cliente and cliente.longitud is not None else None,
+            "repartidor_id": getattr(repartidor, "id", None) if repartidor else None,
+            "motivo": motivo,
         }
 
     def _build_multi_route_explanation(self, routes, unassigned_orders, summary):
