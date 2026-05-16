@@ -1,0 +1,97 @@
+PASOS PARA ACTUALIZAR EL PROYECTO DESDE GITHUB (WINDOWS + POWERSHELL)
+
+OPCIÓN 1: Ejecución rápida (recomendado)
+=========================================
+1) Abre PowerShell en la carpeta del proyecto:
+   cd "C:\Users\DERO\Documents\Universidad\Analisis de algoritmo\Trabajo final\Ruta-F-cil"
+
+2) Ejecuta el script:
+   .\actualizar_proyecto.ps1
+
+   El script hará automáticamente:
+   ✅ git pull de la rama main
+   ✅ Instala dependencias del Backend (pip install)
+   ✅ Instala dependencias del Frontend (npm install)
+   ✅ Ejecuta migraciones de la BD si existen
+
+
+OPCIÓN 2: Ejecución con opciones personalizadas
+================================================
+Si quieres omitir algunas acciones, usa los parámetros:
+
+# Solo actualizar código (sin dependencias ni migraciones)
+.\actualizar_proyecto.ps1 -SkipDependencies -SkipMigrations
+
+# Especificar otra rama (si no es "main")
+.\actualizar_proyecto.ps1 -Branch "develop"
+
+# Combinar opciones
+.\actualizar_proyecto.ps1 -Branch "develop" -SkipDependencies
+
+
+OPCIÓN 3: Actualización manual paso a paso
+===========================================
+Si prefieres hacerlo manualmente en PowerShell:
+
+# 1. Descargar cambios
+git pull origin main
+
+# 2. Actualizar dependencias Backend
+cd backend
+pip install -r requirements.txt
+cd ..
+
+# 3. Actualizar dependencias Frontend
+cd frontend
+npm install
+cd ..
+
+# 4. Ejecutar migraciones (si es necesario)
+cd backend
+python manage.py migrate
+cd ..
+
+
+PERMISOS DE EJECUCIÓN
+=====================
+Si PowerShell no permite ejecutar el script, ejecuta esto una sola vez:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+Luego podrás ejecutar cualquier script PS1 local sin restricciones.
+
+
+REQUISITOS PREVIOS
+==================
+✓ Git debe estar instalado
+✓ Python 3.8+ instalado (para backend)
+✓ Node.js 14+ instalado (para frontend)
+✓ Estar en la rama correcta del repositorio
+
+
+RESOLUCIÓN DE PROBLEMAS
+========================
+Si hay conflictos de merge:
+  git status
+  # Revisa los archivos en conflicto, resuélvelos, luego:
+  git add .
+  git commit -m "Resolvidos conflictos de merge"
+
+Si npm tiene problemas:
+  cd frontend
+  rm -r node_modules package-lock.json
+  npm install
+
+Si pip tiene problemas:
+  cd backend
+  # Borra el venv e instala nuevamente
+  rm -r venv
+  python -m venv venv
+  .\venv\Scripts\Activate.ps1
+  pip install -r requirements.txt
+
+
+MÁS INFORMACIÓN
+===============
+Para ver el estado actual: git status
+Para ver el historial: git log --oneline
+Para cambiar de rama: git checkout <nombre-rama>

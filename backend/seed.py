@@ -4,62 +4,60 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 django.setup()
 
-from django.contrib.auth.models import User
-from logistics.models import Aliado, Repartidor, Cliente, Pedido
+from logistics.models import CustomUser, Cliente, Pedido
 
 def seed():
-    # Users
-    u1, _ = User.objects.get_or_create(username='admin', is_staff=True, is_superuser=True)
-    if _: u1.set_password('admin123'); u1.save()
-    
-    u2, _ = User.objects.get_or_create(username='carlos_m')
-    u3, _ = User.objects.get_or_create(username='ana_g')
-    u4, _ = User.objects.get_or_create(username='bodega_poblado')
+    # Limpiar datos previos si existieran
+    Pedido.objects.all().delete()
+    Cliente.objects.all().delete()
+    CustomUser.objects.all().delete()
 
-    # Aliado
-    aliado, _ = Aliado.objects.get_or_create(
-        user=u4,
-        nombre='Bodega El Poblado',
-        direccion='Calle 10 # 43-21',
-        latitud=6.2089,
-        longitud=-75.5678
+    # 1. Crear Usuarios de acuerdo al mock del Frontend
+    admin = CustomUser.objects.create_superuser(
+        username='admin',
+        role='admin',
+        nombre='Super Admin'
     )
+    admin.set_password('123')
+    admin.save()
 
-    # Repartidores
-    r1, _ = Repartidor.objects.get_or_create(
-        user=u2,
-        nombre='Carlos M.',
-        latitud_actual=6.2100,
-        longitud_actual=-75.5700,
-        estado='ocupado'
+    carlos = CustomUser.objects.create(
+        username='carlos', role='driver', nombre='Carlos Mendoza', estado='Disponible', ubicacion='Zona Norte'
     )
-    r2, _ = Repartidor.objects.get_or_create(
-        user=u3,
-        nombre='Ana G.',
-        latitud_actual=6.2050,
-        longitud_actual=-75.5650,
-        estado='disponible'
-    )
+    carlos.set_password('123')
+    carlos.save()
 
-    # Clientes
-    c1, _ = Cliente.objects.get_or_create(
-        nombre='David Restrepo',
-        direccion='Circular 4 # 72-10',
-        latitud=6.2442,
-        longitud=-75.5891
+    ana = CustomUser.objects.create(
+        username='ana', role='driver', nombre='Ana Gómez', estado='Disponible', ubicacion='Centro'
     )
-    c2, _ = Cliente.objects.get_or_create(
-        nombre='Sura Rueda',
-        direccion='Carrera 70 # 32-15',
-        latitud=6.2308,
-        longitud=-75.5905
+    ana.set_password('123')
+    ana.save()
+
+    luis = CustomUser.objects.create(
+        username='luis', role='driver', nombre='Luis Ramírez', estado='Ocupado', ubicacion='Zona Sur'
     )
+    luis.set_password('123')
+    luis.save()
 
-    # Pedidos
-    Pedido.objects.get_or_create(cliente=c1, descripcion='Paquete pequeño - Electrónicos', estado='pendiente')
-    Pedido.objects.get_or_create(cliente=c2, descripcion='Caja mediana - Ropa', estado='pendiente')
+    maria = CustomUser.objects.create(
+        username='maria', role='driver', nombre='María Torres', estado='Disponible', ubicacion='Occidente'
+    )
+    maria.set_password('123')
+    maria.save()
 
-    print("Seed data created successfully!")
+    # 2. Crear Clientes
+    c1 = Cliente.objects.create(nombre='Restaurante El Buen Sabor', direccion='Calle 45 # 12-34')
+    c2 = Cliente.objects.create(nombre='Farmacia San Juan', direccion='Avenida Siempre Viva 742')
+    c3 = Cliente.objects.create(nombre='Supermercado Central', direccion='Carrera 15 # 8-20')
+    c4 = Cliente.objects.create(nombre='Tienda La Esquina', direccion='Calle 100 # 50-10')
+
+    # 3. Crear Pedidos
+    Pedido.objects.create(cliente=c1, estado='Pendiente')
+    Pedido.objects.create(cliente=c2, estado='Pendiente')
+    Pedido.objects.create(cliente=c3, estado='En ruta', repartidor=luis)
+    Pedido.objects.create(cliente=c4, estado='Pendiente')
+
+    print("Datos sembrados correctamente de acuerdo al mock del Frontend.")
 
 if __name__ == '__main__':
     seed()
