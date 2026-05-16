@@ -60,10 +60,12 @@ const getErrorMessage = (payload) => {
 
 async function request(path, options = {}) {
   const isFormData = options.body instanceof FormData;
-  const headers = isFormData ? getAuthHeaders() : { ...getAuthHeaders() };
+  const headers = { ...getAuthHeaders() };
   
   // No override Content-Type para FormData (el navegador lo hace automáticamente)
-  if (!isFormData && !headers['Content-Type']) {
+  if (isFormData) {
+    delete headers['Content-Type'];
+  } else if (!headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
   

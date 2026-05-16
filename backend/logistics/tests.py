@@ -350,6 +350,37 @@ class ImportExcelCommandTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_import_excel_pedidos_only_creates_clients_from_orders(self):
+        workbook = Workbook()
+        pedidos = workbook.active
+        pedidos.title = 'Pedidos'
+        pedidos.append(['cliente', 'direccion', 'latitud', 'longitud', 'prioridad', 'peso_total_kg'])
+        pedidos.append(['Cliente 00001', 'Calle 45 # 60-117, Guayabal, Medellin', 6.350632, -75.525577, 5, 90.14])
+        pedidos.append(['Cliente 00002', 'Carrera 70 # 45-30, Laureles, Medellin', 6.244203, -75.581211, 1, 2.5])
+
+        with TemporaryDirectory() as directory:
+            file_path = Path(directory) / 'datos_medellin_10000.xlsx'
+            workbook.save(file_path)
+            upload = SimpleUploadedFile(
+                'datos_medellin_10000.xlsx',
+                file_path.read_bytes(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+
+        response = self.client.post('/api/import-excel/', {'file': upload}, format='multipart')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['sheets_detected'], ['Pedidos'])
+        self.assertEqual(response.data['created']['clientes'], 2)
+        self.assertEqual(response.data['created']['pedidos'], 2)
+        self.assertIn('Hoja Aliados no encontrada, se omite.', response.data['warnings'])
+        self.assertIn('Hoja Repartidores no encontrada, se omite.', response.data['warnings'])
+        self.assertIn('Hoja Clientes no encontrada, se crearan clientes desde Pedidos.', response.data['warnings'])
+        self.assertEqual(Cliente.objects.count(), 2)
+        self.assertEqual(Pedido.objects.count(), 2)
+        self.assertEqual(Pedido.objects.get(cliente__nombre='Cliente 00001').prioridad, 'urgente')
+        self.assertEqual(Pedido.objects.get(cliente__nombre='Cliente 00002').prioridad, 'baja')
+
 
 class DriverApiTests(TestCase):
     def setUp(self):

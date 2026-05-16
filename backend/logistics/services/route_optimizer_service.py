@@ -690,6 +690,7 @@ class RouteOptimizerService:
             'pedidos_seleccionados': all_selected,
             'pedidos_descartados': discarded,
             'unassigned_orders': discarded,
+            'unassigned_summary': self._summarize_unassigned(discarded),
             'total_rutas': len(routes),
             'radio_permitido_km': MAX_ROUTE_RADIUS_KM,
             'radio_permitido_m2': MAX_ROUTE_AREA_KM2,
@@ -715,6 +716,7 @@ class RouteOptimizerService:
             'pedidos_seleccionados': [],
             'pedidos_descartados': discarded,
             'unassigned_orders': discarded,
+            'unassigned_summary': self._summarize_unassigned(discarded),
             'total_rutas': 0,
             'radio_permitido_km': MAX_ROUTE_RADIUS_KM,
             'radio_permitido_m2': MAX_ROUTE_AREA_KM2,
@@ -736,6 +738,21 @@ class RouteOptimizerService:
                 'rutas_creadas': 0,
             },
         }
+
+    def _summarize_unassigned(self, unassigned_orders):
+        grouped = {}
+        for item in unassigned_orders or []:
+            motivo = item.get('motivo') or 'Sin motivo especificado.'
+            grouped.setdefault(motivo, []).append(item.get('pedido_id'))
+
+        return [
+            {
+                'motivo': motivo,
+                'cantidad': len([pedido_id for pedido_id in pedido_ids if pedido_id is not None]),
+                'pedidos': [pedido_id for pedido_id in pedido_ids if pedido_id is not None],
+            }
+            for motivo, pedido_ids in grouped.items()
+        ]
 
     def _get_driver_coordinates(self, driver):
         """

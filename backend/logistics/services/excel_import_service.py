@@ -35,17 +35,27 @@ def import_excel_file(file_path):
         return result
 
     seen_sheets = set()
+    result['sheets_detected'] = list(workbook.sheetnames)
+    result['columns_detected'] = {}
     for sheet in workbook.worksheets:
         rows = list(_rows_as_dicts(sheet))
         if not rows:
             continue
 
         sheet_type = _sheet_type(sheet.title, rows[0])
+        result['columns_detected'][sheet.title] = list(rows[0].keys())
         if sheet_type not in SHEET_ALIASES.values():
             result['warnings'].append(f'Hoja ignorada: {sheet.title}')
             continue
 
         seen_sheets.add(sheet_type)
+        missing_columns = _missing_required_columns(sheet_type, rows[0])
+        if missing_columns:
+            result['errors'].append(
+                f'Hoja {sheet.title}: faltan columnas requeridas: {", ".join(missing_columns)}'
+            )
+            continue
+
         for index, row in enumerate(rows, start=2):
             try:
                 if sheet_type == 'aliados':
@@ -59,9 +69,17 @@ def import_excel_file(file_path):
             except Exception as exc:
                 result['errors'].append(f'Hoja {sheet.title}, fila {index}: {exc}')
 
-    for expected in ('aliados', 'repartidores', 'clientes', 'pedidos'):
-        if expected not in seen_sheets:
-            result['warnings'].append(f'No se encontro hoja de {expected}; se continuo con las disponibles.')
+    if 'aliados' not in seen_sheets:
+        result['warnings'].append('Hoja Aliados no encontrada, se omite.')
+    if 'repartidores' not in seen_sheets:
+        result['warnings'].append('Hoja Repartidores no encontrada, se omite.')
+    if 'clientes' not in seen_sheets:
+        if 'pedidos' in seen_sheets:
+            result['warnings'].append('Hoja Clientes no encontrada, se crearan clientes desde Pedidos.')
+        else:
+            result['warnings'].append('Hoja Clientes no encontrada, se omite.')
+    if 'pedidos' not in seen_sheets:
+        result['warnings'].append('Hoja Pedidos no encontrada, se omite.')
 
     return result
 
@@ -69,8 +87,10 @@ def import_excel_file(file_path):
 def _result(errors=None):
     return {
         'message': 'Importacion completada',
+        'sheets_detected': [],
+        'columns_detected': {},
         'created': {'aliados': 0, 'repartidores': 0, 'clientes': 0, 'pedidos': 0},
-        'updated': {'aliados': 0, 'repartidores': 0, 'clientes': 0},
+        'updated': {'aliados': 0, 'repartidores': 0, 'clientes': 0, 'pedidos': 0},
         'errors': errors or [],
         'warnings': [],
     }
@@ -97,6 +117,23 @@ def _sheet_type(title, first_row):
         return SHEET_ALIASES[normalized_title]
     row_type = _normalize(first_row.get('tipo') or first_row.get('type'))
     return SHEET_ALIASES.get(row_type, normalized_title)
+
+
+def _missing_required_columns(sheet_type, row):
+    required_groups = {
+        'pedidos': [
+            ('cliente', {'cliente'}),
+            ('direccion', {'direccion'}),
+            ('latitud', {'latitud', 'latitude'}),
+            ('longitud', {'longitud', 'longitude'}),
+            ('prioridad', {'prioridad', 'priority'}),
+            ('peso_total_kg', {'peso_total_kg', 'peso', 'weightkg'}),
+        ],
+    }.get(sheet_type, [])
+    if not required_groups:
+        return []
+    available = set(row.keys())
+    return [label for label, aliases in required_groups if not available.intersection(aliases)]
 
 
 def _import_aliado(row, result):
@@ -136,16 +173,24 @@ def _import_cliente(row, result):
 
 
 def _import_pedido(row, result):
+    lat = _decimal(row, 'latitud', 'latitude')
+    lng = _decimal(row, 'longitud', 'longitude')
+    _validate_coordinates(lat, lng)
+    weight = _decimal(row, 'peso_total_kg', 'peso', 'weightkg', default=0) or Decimal('0')
+    if weight < 0:
+        raise ValueError('El peso_total_kg no puede ser negativo.')
+
     cliente, client_created = _upsert_cliente(row)
     if client_created:
         result['created']['clientes'] += 1
+
     Pedido.objects.create(
         cliente=cliente,
         aliado=_find_aliado(row),
         descripcion=_value(row, 'descripcion', 'description', default=''),
         estado=_value(row, 'estado', 'status', default='Pendiente'),
-        prioridad=_value(row, 'prioridad', 'priority', default='normal'),
-        peso_total_kg=_decimal(row, 'peso_total_kg', 'peso', 'weightkg', default=0),
+        prioridad=_priority(row),
+        peso_total_kg=weight,
         volumen_total_m3=_decimal(row, 'volumen_total_m3', 'volumen', default=None),
     )
     result['created']['pedidos'] += 1
@@ -168,15 +213,24 @@ def _upsert_user(username, nombre, role, estado='Disponible'):
 
 def _upsert_cliente(row):
     nombre = _value(row, 'cliente', 'cliente_nombre', 'nombre', 'name', default='Cliente sin nombre')
-    return Cliente.objects.update_or_create(
+    direccion = _value(row, 'direccion', 'destination', 'address', default='Sin direccion')
+    cliente = Cliente.objects.filter(nombre=nombre, direccion=direccion).first()
+    defaults = {
+        'correo': _value(row, 'correo', 'email', default=None),
+        'telefono': _value(row, 'telefono', 'phone', default=None),
+        'direccion': direccion,
+        'latitud': _decimal(row, 'latitud', 'latitude'),
+        'longitud': _decimal(row, 'longitud', 'longitude'),
+    }
+    if cliente:
+        for key, value in defaults.items():
+            setattr(cliente, key, value)
+        cliente.save()
+        return cliente, False
+    return Cliente.objects.get_or_create(
         nombre=nombre,
-        defaults={
-            'correo': _value(row, 'correo', 'email', default=None),
-            'telefono': _value(row, 'telefono', 'phone', default=None),
-            'direccion': _value(row, 'direccion', 'destination', 'address', default='Sin direccion'),
-            'latitud': _decimal(row, 'latitud', 'latitude'),
-            'longitud': _decimal(row, 'longitud', 'longitude'),
-        },
+        direccion=direccion,
+        defaults=defaults,
     )
 
 
@@ -203,6 +257,31 @@ def _decimal(row, *keys, default=None):
         return Decimal(str(raw).replace(',', '.'))
     except (InvalidOperation, ValueError):
         return default
+
+
+def _validate_coordinates(lat, lng):
+    if lat is None or lng is None:
+        raise ValueError('Latitud y longitud son obligatorias para pedidos.')
+    if not (Decimal('-90') <= lat <= Decimal('90')):
+        raise ValueError('Latitud fuera de rango.')
+    if not (Decimal('-180') <= lng <= Decimal('180')):
+        raise ValueError('Longitud fuera de rango.')
+
+
+def _priority(row):
+    raw = _value(row, 'prioridad', 'priority', default='normal')
+    mapping = {
+        '1': 'baja',
+        '2': 'normal',
+        '3': 'normal',
+        '4': 'alta',
+        '5': 'urgente',
+        'baja': 'baja',
+        'normal': 'normal',
+        'alta': 'alta',
+        'urgente': 'urgente',
+    }
+    return mapping.get(_normalize(raw), 'normal')
 
 
 def _username(value, prefix):

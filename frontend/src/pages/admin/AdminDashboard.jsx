@@ -187,6 +187,9 @@ export const AdminDashboard = () => {
         {importError && <div className="error-message mt-4">{importError}</div>}
         {importSummary && (
           <div className="import-summary">
+            {!!importSummary.sheets_detected?.length && (
+              <p>Hojas detectadas: {importSummary.sheets_detected.join(', ')}</p>
+            )}
             <p>Creados: {JSON.stringify(importSummary.created)}</p>
             <p>Actualizados: {JSON.stringify(importSummary.updated)}</p>
             {!!importSummary.warnings?.length && <p>Advertencias: {importSummary.warnings.join(' | ')}</p>}
