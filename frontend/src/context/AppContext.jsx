@@ -23,6 +23,7 @@ export const useAppContext = () => useContext(AppContext);
 export const AppProvider = ({ children }) => {
   const [users, setUsers] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [routes, setRoutes] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [driverProfiles, setDriverProfiles] = useState([]);
   const [currentUser, setCurrentUser] = useState(() => sessionService.getUser());
@@ -46,16 +47,18 @@ export const AppProvider = ({ children }) => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [usersData, ordersData, warehousesData, driverProfilesData] = await Promise.all([
+      const [usersData, ordersData, warehousesData, driverProfilesData, routesData] = await Promise.all([
         api.getUsers(),
         api.getOrders(),
         api.getWarehouses(),
         api.getDrivers(),
+        api.getRoutes(),
       ]);
       setUsers(normalizeList(usersData));
       setOrders(normalizeList(ordersData));
       setWarehouses(normalizeList(warehousesData));
       setDriverProfiles(normalizeList(driverProfilesData));
+      setRoutes(normalizeList(routesData));
     } catch (error) {
       console.error('Error al cargar datos del backend:', error);
     } finally {
@@ -71,6 +74,7 @@ export const AppProvider = ({ children }) => {
       setOrders(normalizeList(data.orders));
       setWarehouses(normalizeList(data.warehouses));
       setDriverProfiles(normalizeList(data.drivers));
+      setRoutes(normalizeList(data.routes));
       return data;
     } finally {
       setLoading(false);
@@ -325,7 +329,11 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const optimizeRoute = async (payload) => api.optimizeRoute(payload);
+  const optimizeRoute = async (payload) => {
+    const result = await api.optimizeRoute(payload);
+    await fetchData();
+    return result;
+  };
   const importExcelData = async (file) => {
     const result = await api.importExcel(file);
     await refreshData();
@@ -370,6 +378,7 @@ export const AppProvider = ({ children }) => {
     <AppContext.Provider value={{
       users,
       orders,
+      routes,
       warehouses,
       driverProfiles,
       currentUser,

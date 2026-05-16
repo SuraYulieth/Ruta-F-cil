@@ -16,10 +16,10 @@ const getDriverCoordinates = (driver) => {
   return { lat: parsedLat, lng: parsedLng };
 };
 const getOptimizerHiddenReason = (driver) => {
-  if (!isDriverRole(driver)) return 'No aparece porque role no es driver/repartidor.';
-  if (driver?.disponible !== true) return 'No aparece porque esta No disponible.';
-  if (!isAvailableStatus(driver)) return 'No aparece porque su estado no es disponible/activo.';
-  if (!getDriverCoordinates(driver)) return 'No aparece porque no tiene coordenadas.';
+  if (!isDriverRole(driver)) return 'Rol no habilitado para reparto';
+  if (driver?.disponible !== true) return 'No disponible';
+  if (!isAvailableStatus(driver)) return 'Estado inactivo';
+  if (!getDriverCoordinates(driver)) return 'Sin coordenadas';
   return '';
 };
 const isAvailableForOptimization = (driver) => (
@@ -42,7 +42,7 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
       .map((driver) => ({
         id: driver.id,
         name: driver.name || driver.nombre || `Driver ${driver.id}`,
-        reason: driver.motivo_visibilidad || getOptimizerHiddenReason(driver),
+        reason: getOptimizerHiddenReason(driver),
       })),
     [drivers],
   );
@@ -165,11 +165,12 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
         </label>
 
         {hiddenDrivers.length > 0 && (
-          <div className="optimizer-driver-warning">
+          <details className="optimizer-driver-debug">
+            <summary>Ver diagnostico tecnico</summary>
             {hiddenDrivers.slice(0, 3).map((driver) => (
               <p key={driver.id}>{driver.name}: {driver.reason}</p>
             ))}
-          </div>
+          </details>
         )}
 
         <label>

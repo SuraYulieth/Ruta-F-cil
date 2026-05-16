@@ -9,10 +9,16 @@ const isAvailableDriver = (driver) => (
   driver?.disponible === true
   && ['disponible', 'activo', 'active', 'available'].includes(normalizeText(driver?.status || driver?.estado))
 );
+const getDriverCoordinates = (driver) => {
+  const lat = Number(driver?.latitud_actual ?? driver?.latitud ?? driver?.latitude);
+  const lng = Number(driver?.longitud_actual ?? driver?.longitud ?? driver?.longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+};
 
 export const AdminDashboard = () => {
   const {
     orders,
+    routes,
     warehouses,
     getDrivers,
     assignOrders,
@@ -23,6 +29,7 @@ export const AdminDashboard = () => {
   } = useAppContext();
 
   const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeRoutes = Array.isArray(routes) ? routes : [];
   const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
 
   const getOrderStatus = (order) => String(order?.status || order?.estado || 'Sin estado');
@@ -31,6 +38,9 @@ export const AdminDashboard = () => {
   const getOrderWeight = (order) => order?.weightKg ?? order?.peso_total_kg ?? 0;
   const getOrderPriority = (order) => order?.priority || order?.prioridad || 'normal';
   const getOrderDriverId = (order) => order?.driverId || order?.repartidor_info?.id || order?.repartidor || null;
+  const getOrderDriverName = (order) => order?.repartidor_nombre || order?.repartidor_info?.name || order?.repartidor_info?.nombre || getOrderDriverId(order) || 'Sin repartidor';
+  const getOrderRouteId = (order) => order?.ruta_id || order?.routeId || null;
+  const getOrderStopOrder = (order) => order?.orden_entrega || order?.stopOrder || null;
 
   const [isAssigning, setIsAssigning] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -47,13 +57,46 @@ export const AdminDashboard = () => {
 
   const isPendingOrder = (order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente';
   const isAssignedOrder = (order) => String(order.estado || order.status || '').toLowerCase() === 'asignado';
+  const isActiveOrder = (order) => ['asignado', 'en ruta', 'en_ruta'].includes(String(order.estado || order.status || '').toLowerCase());
 
   const drivers = Array.isArray(getDrivers?.()) ? getDrivers() : [];
   const pendingCount = safeOrders.filter(isPendingOrder).length;
   const availableCount = drivers.filter(isAvailableDriver).length;
 
   const pendingOrders = safeOrders.filter(isPendingOrder);
+  const activeOrders = safeOrders.filter(isActiveOrder);
   const assignedOrders = safeOrders.filter(isAssignedOrder);
+  const activeOrdersByDriver = activeOrders.reduce((acc, order) => {
+    const driverId = Number(getOrderDriverId(order));
+    if (Number.isFinite(driverId)) {
+      acc.set(driverId, (acc.get(driverId) || 0) + 1);
+    }
+    return acc;
+  }, new Map());
+
+  const getDriverOperationalStatus = (driver) => {
+    const status = normalizeText(driver.status || driver.estado);
+    const hasCoordinates = Boolean(getDriverCoordinates(driver));
+    const activeCount = activeOrdersByDriver.get(Number(driver.id)) || 0;
+
+    if (activeCount > 0 || status === 'ocupado') {
+      return { label: 'En entrega', className: 'en-entrega' };
+    }
+    if (driver.disponible !== true) {
+      return { label: 'No disponible', className: 'no-disponible' };
+    }
+    if (!['disponible', 'activo', 'active', 'available'].includes(status)) {
+      return { label: 'Inactivo', className: 'inactivo' };
+    }
+    if (!hasCoordinates) {
+      return { label: 'Sin coordenadas', className: 'sin-coordenadas' };
+    }
+    return { label: 'Disponible', className: 'disponible' };
+  };
+
+  const getDriverAvailabilityText = (driver) => driver.disponible === true ? 'Disponible' : 'No disponible';
+  const canReceiveManualOrders = (driver) => isAvailableDriver(driver);
+  const canOptimizeRoutes = (driver) => isAvailableDriver(driver) && Boolean(getDriverCoordinates(driver));
 
   const handleOpenManualAssign = (order) => {
     setAssignmentError('');
@@ -162,6 +205,7 @@ export const AdminDashboard = () => {
           routeGeometry={optimization?.optimizer?.geometria}
           routeStops={optimization?.route?.paradas || []}
           optimization={optimization}
+          routes={safeRoutes}
         />
         <RouteOptimizerPanel
           onDriverLocationChange={setDriverLocation}
@@ -171,14 +215,18 @@ export const AdminDashboard = () => {
 
       <main className="main-grid mt-4">
         <section className="panel">
-          <h2>Pedidos activos <span className="count">{safeOrders.length}</span></h2>
+          <h2>Pedidos activos <span className="count">{activeOrders.length}</span></h2>
           <div className="list-container">
-            {safeOrders.map((order) => (
+            {activeOrders.length === 0 ? (
+              <p className="text-muted">No hay pedidos activos</p>
+            ) : activeOrders.map((order) => (
               <div key={order.id} className="card">
                 <div className="card-info">
-                  <h3>{getOrderCustomer(order)}</h3>
+                  <h3>Pedido #{order.id} - {getOrderCustomer(order)}</h3>
                   <p>{getOrderDestination(order)}</p>
-                  {getOrderDriverId(order) && <p>Repartidor ID: {getOrderDriverId(order)}</p>}
+                  <p>Repartidor: {getOrderDriverName(order)}</p>
+                  <p>Ruta: {getOrderRouteId(order) ? `Ruta #${getOrderRouteId(order)}` : 'Sin ruta'} | Orden: {getOrderStopOrder(order) ? `#${getOrderStopOrder(order)}` : 'N/A'}</p>
+                  <p>Prioridad: {getOrderPriority(order)} | ETA: {order.tiempo_estimado_desde_anterior_mins || 'N/A'} min</p>
                 </div>
                 <div className={`badge ${getOrderStatus(order).toLowerCase().replace(' ', '-')}`}>
                   {getOrderStatus(order)}
@@ -241,22 +289,57 @@ export const AdminDashboard = () => {
 
         <section className="panel">
           <h2>Repartidores en zona <span className="count">{drivers.length}</span></h2>
-          <div className="list-container">
-            {drivers.map((driver) => (
-              <div key={driver.id} className="card">
-                <div className="card-info">
-                    <h3>{driver.name || driver.nombre || 'Repartidor'}</h3>
-                    <p>{driver.location || driver.ubicacion || 'Sin ubicacion'}</p>
+          <div className="drivers-zone-table">
+            <div className="drivers-zone-head">
+              <span>Repartidor</span>
+              <span>Estado</span>
+              <span>Disponibilidad</span>
+              <span>Coordenadas</span>
+              <span>Puede recibir pedidos</span>
+              <span>Accion</span>
+            </div>
+            {drivers.map((driver) => {
+              const operationalStatus = getDriverOperationalStatus(driver);
+              const hasCoordinates = Boolean(getDriverCoordinates(driver));
+              const canReceive = canReceiveManualOrders(driver);
+              const canOptimize = canOptimizeRoutes(driver);
+
+              return (
+                <div key={driver.id} className="drivers-zone-row">
+                  <div>
+                    <strong>{driver.name || driver.nombre || 'Repartidor'}</strong>
+                    <small>{driver.location || driver.ubicacion || 'Sin ubicacion'}</small>
+                  </div>
+                  <span className={`driver-status-pill ${operationalStatus.className}`}>
+                    {operationalStatus.label}
+                  </span>
+                  <span>{getDriverAvailabilityText(driver)}</span>
+                  <span className={`driver-status-pill ${hasCoordinates ? 'disponible' : 'sin-coordenadas'}`}>
+                    {hasCoordinates ? 'Si' : 'Sin coordenadas'}
+                  </span>
+                  <span>{canReceive ? 'Si' : 'No'}</span>
+                  <span className="driver-action-note">
+                    {canOptimize ? 'Manual y optimizacion' : canReceive ? 'Solo manual' : 'No asignable'}
+                  </span>
                 </div>
-                <div className={`badge ${String(driver.status || driver.estado || 'sin estado').toLowerCase()}`}>
-                  {driver.status || driver.estado || 'Sin estado'}
-                </div>
-                {driver.motivo_visibilidad && (
-                  <p className="hint-text">{driver.motivo_visibilidad}</p>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
+
+          {drivers.length > 0 && (
+            <details className="technical-diagnostics">
+              <summary>Ver diagnostico tecnico</summary>
+              {drivers.map((driver) => {
+                const operationalStatus = getDriverOperationalStatus(driver);
+                return (
+                  <p key={driver.id}>
+                    {driver.name || driver.nombre || 'Repartidor'}: {operationalStatus.label}
+                    {canOptimizeRoutes(driver) ? ' - habilitado para optimizacion.' : ' - revisar disponibilidad o coordenadas.'}
+                  </p>
+                );
+              })}
+            </details>
+          )}
 
           <div className="actions">
             <button

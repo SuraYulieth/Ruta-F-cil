@@ -85,6 +85,7 @@ export const api = {
   getWarehouses: () => request('/aliados/'),
   getDrivers: () => request('/repartidores/'),
   getDriverDiagnostics: () => request('/repartidores/diagnostics/'),
+  getRoutes: () => request('/routes/'),
   
   // ============ DRIVER ENDPOINTS (Token Auth Required) ============
   getDriverProfile: () => request('/drivers/me/'),
@@ -125,7 +126,8 @@ export const api = {
     api.getOrders(),
     api.getWarehouses(),
     api.getDrivers(),
-  ]).then(([users, orders, warehouses, drivers]) => ({ users, orders, warehouses, drivers })),
+    api.getRoutes(),
+  ]).then(([users, orders, warehouses, drivers, routes]) => ({ users, orders, warehouses, drivers, routes })),
   importExcel: (file) => {
     const formData = new FormData();
     formData.append('file', file);

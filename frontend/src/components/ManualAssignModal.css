@@ -142,10 +142,12 @@
   font-size: 13px;
 }
 
-.driver-diagnostics strong {
+.driver-diagnostics summary {
   display: block;
   margin-bottom: 6px;
   color: #9a3412;
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .driver-diagnostics p {

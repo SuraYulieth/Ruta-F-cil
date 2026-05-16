@@ -238,6 +238,34 @@ class PedidoViewSet(viewsets.ModelViewSet):
             pedido.estado = 'Asignado'
             pedido.save(update_fields=['repartidor', 'estado'])
 
+            if not pedido.paradas_ruta.exists():
+                lat = pedido.cliente.latitud or 0
+                lng = pedido.cliente.longitud or 0
+                route = Ruta.objects.create(
+                    pedido=pedido,
+                    repartidor=repartidor,
+                    aliado=pedido.aliado,
+                    latitud_inicio=to_decimal(lat),
+                    longitud_inicio=to_decimal(lng),
+                    tiempo_estimado_mins=0,
+                    distancia_km=0,
+                    capacidad_usada_kg=pedido.peso_total_kg or 0,
+                    estado_ruta='asignada',
+                    geometria={
+                        'type': 'LineString',
+                        'coordinates': [[float(lng), float(lat)]],
+                    },
+                )
+                RutaParada.objects.create(
+                    ruta=route,
+                    pedido=pedido,
+                    orden=1,
+                    latitud=to_decimal(lat),
+                    longitud=to_decimal(lng),
+                    distancia_desde_anterior_km=0,
+                    tiempo_estimado_desde_anterior_mins=0,
+                )
+
             response_data = PedidoDetailResponseSerializer(pedido).data
             return Response(
                 {
@@ -430,6 +458,7 @@ class RutaViewSet(viewsets.ModelViewSet):
                 repartidor=route.repartidor,
                 estado='Asignado',
             )
+            route.paradas.update(estado='pendiente')
             route.estado_ruta = 'asignada'
             route.save(update_fields=['estado_ruta'])
             route.repartidor.estado = 'Ocupado'
@@ -489,6 +518,7 @@ class RutaViewSet(viewsets.ModelViewSet):
             tiempo_estimado_mins=plan['duracion_total_mins'],
             distancia_km=plan['distancia_total_km'],
             capacidad_usada_kg=plan['capacidad_usada_kg'],
+            estado_ruta='asignada',
             geometria=plan.get('geometria'),
             decision_ai={
                 **decision,
@@ -518,6 +548,9 @@ class RutaViewSet(viewsets.ModelViewSet):
                 distancia_desde_anterior_km=stop['distancia_desde_anterior_km'],
                 tiempo_estimado_desde_anterior_mins=stop['tiempo_estimado_desde_anterior_mins'],
             )
+
+        repartidor.estado = 'Ocupado'
+        repartidor.save(update_fields=['estado'])
 
         return RutaSerializer(route).data
 
@@ -764,6 +797,21 @@ class DriverViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+    def _sync_route_after_stop_update(self, order):
+        stops = RutaParada.objects.select_related('ruta').filter(pedido=order)
+        for stop in stops:
+            route = stop.ruta
+            route_stops = route.paradas.all()
+            if route_stops.exists() and not route_stops.exclude(estado='completada').exists():
+                route.estado_ruta = 'completada'
+                route.save(update_fields=['estado_ruta'])
+                if not Pedido.objects.filter(
+                    repartidor=route.repartidor,
+                    estado__in=['Asignado', 'En ruta'],
+                ).exists():
+                    route.repartidor.estado = 'Disponible'
+                    route.repartidor.save(update_fields=['estado'])
+
     @action(detail=False, methods=['post'], url_path='me/location')
     def update_location(self, request):
         """Actualizar ubicación del repartidor."""
@@ -815,8 +863,8 @@ class DriverViewSet(viewsets.ViewSet):
             order.save(update_fields=['estado'])
             
             # Actualizar parada si existe
-            from django.db.models import Q
             RutaParada.objects.filter(pedido=order).update(estado='pendiente')
+            Ruta.objects.filter(paradas__pedido=order, estado_ruta='asignada').update(estado_ruta='en_ruta')
             
             return Response(
                 {
@@ -849,6 +897,7 @@ class DriverViewSet(viewsets.ViewSet):
             
             # Actualizar parada si existe
             RutaParada.objects.filter(pedido=order).update(estado='completada')
+            self._sync_route_after_stop_update(order)
             
             return Response(
                 {
@@ -879,6 +928,7 @@ class DriverViewSet(viewsets.ViewSet):
             order.fecha_entrega = timezone.now()
             order.save(update_fields=['estado', 'fecha_entrega'])
             RutaParada.objects.filter(pedido=order).update(estado='completada')
+            self._sync_route_after_stop_update(order)
 
             return Response(
                 {

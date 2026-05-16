@@ -9,9 +9,9 @@ const isAvailableForManualAssign = (driver) => (
   isDriverRole(driver) && driver?.disponible === true && isAvailableStatus(driver)
 );
 const getHiddenReason = (driver) => {
-  if (!isDriverRole(driver)) return 'No aparece porque role no es driver/repartidor.';
-  if (driver?.disponible !== true) return 'No aparece porque esta No disponible.';
-  if (!isAvailableStatus(driver)) return 'No aparece porque su estado no es disponible/activo.';
+  if (!isDriverRole(driver)) return 'Rol no habilitado para reparto';
+  if (driver?.disponible !== true) return 'No disponible';
+  if (!isAvailableStatus(driver)) return 'Estado inactivo';
   return '';
 };
 
@@ -55,7 +55,7 @@ export const ManualAssignModal = ({
     .map((driver) => ({
       id: driver.id,
       name: driver.name || driver.nombre || `Repartidor ${driver.id}`,
-      reason: driver.motivo_visibilidad || getHiddenReason(driver),
+      reason: getHiddenReason(driver),
     }));
 
   return (
@@ -101,12 +101,12 @@ export const ManualAssignModal = ({
               </p>
             )}
             {hiddenDrivers.length > 0 && (
-              <div className="driver-diagnostics">
-                <strong>Repartidores ocultos</strong>
+              <details className="driver-diagnostics">
+                <summary>Ver diagnostico tecnico</summary>
                 {hiddenDrivers.map((driver) => (
                   <p key={driver.id}>{driver.name}: {driver.reason}</p>
                 ))}
-              </div>
+              </details>
             )}
           </div>
 

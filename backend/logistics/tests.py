@@ -237,6 +237,37 @@ class RouteApiTests(TestCase):
         self.assertEqual(self.pedido.repartidor_id, self.driver.id)
         self.assertEqual(response.data['pedido']['estado'], 'Asignado')
         self.assertEqual(response.data['pedido']['id'], self.pedido.id)
+        self.assertTrue(self.pedido.paradas_ruta.exists())
+        self.assertEqual(self.pedido.paradas_ruta.first().orden, 1)
+
+    def test_optimize_route_persists_multiple_orders_in_one_route(self):
+        cliente_b = Cliente.objects.create(
+            nombre='Cliente API B',
+            direccion='Centro B',
+            latitud=4.7120,
+            longitud=-74.0730,
+        )
+        pedido_b = Pedido.objects.create(cliente=cliente_b, prioridad='alta', peso_total_kg=1)
+
+        response = self.client.post('/api/routes/optimize/', {
+            'repartidor_id': self.driver.id,
+            'latitud_inicial': 4.7100,
+            'longitud_inicial': -74.0700,
+            'pedidos_candidatos': [self.pedido.id, pedido_b.id],
+            'capacidad_maxima': 5,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        route = Ruta.objects.get(id=response.data['route']['id'])
+        self.assertEqual(route.paradas.count(), 2)
+        self.assertEqual(route.estado_ruta, 'asignada')
+        self.assertEqual(list(route.paradas.values_list('orden', flat=True)), [1, 2])
+        self.pedido.refresh_from_db()
+        pedido_b.refresh_from_db()
+        self.assertEqual(self.pedido.estado, 'Asignado')
+        self.assertEqual(pedido_b.estado, 'Asignado')
+        self.assertEqual(response.data['route']['total_pedidos'], 2)
+        self.assertEqual(len(response.data['route']['pedidos']), 2)
 
 
 class RouteMetricsServiceTests(TestCase):

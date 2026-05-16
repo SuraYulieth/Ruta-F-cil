@@ -497,12 +497,17 @@ class PedidoSerializer(serializers.ModelSerializer):
             'incorrect_type': 'El ID del repartidor debe ser un número entero.',
         }
     )
+    repartidor_nombre = serializers.SerializerMethodField(read_only=True)
+    ruta_id = serializers.SerializerMethodField(read_only=True)
+    orden_entrega = serializers.SerializerMethodField(read_only=True)
+    ruta_estado = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Pedido
         fields = [
             'id', 'customer', 'destination', 'latitude', 'longitude', 'estado', 'status',
             'priority', 'warehouseId', 'warehouseName', 'weightKg', 'driverId',
+            'repartidor_nombre', 'ruta_id', 'orden_entrega', 'ruta_estado',
             'fecha_creacion', 'ventana_entrega_inicio', 'ventana_entrega_fin'
         ]
 
@@ -532,9 +537,28 @@ class PedidoSerializer(serializers.ModelSerializer):
 
         return Pedido.objects.create(cliente=cliente, **validated_data)
 
+    def _first_stop(self, obj):
+        return obj.paradas_ruta.select_related('ruta').order_by('-ruta__fecha_creacion', 'orden').first()
+
+    def get_repartidor_nombre(self, obj):
+        return obj.repartidor.nombre if obj.repartidor else None
+
+    def get_ruta_id(self, obj):
+        stop = self._first_stop(obj)
+        return stop.ruta_id if stop else None
+
+    def get_orden_entrega(self, obj):
+        stop = self._first_stop(obj)
+        return stop.orden if stop else None
+
+    def get_ruta_estado(self, obj):
+        stop = self._first_stop(obj)
+        return stop.ruta.estado_ruta if stop else None
+
 
 class RutaParadaSerializer(serializers.ModelSerializer):
     pedido = PedidoSerializer(read_only=True)
+    pedido_id = serializers.IntegerField(source='pedido.id', read_only=True)
     latitud = serializers.DecimalField(
         max_digits=10,
         decimal_places=8,
@@ -562,13 +586,16 @@ class RutaParadaSerializer(serializers.ModelSerializer):
     class Meta:
         model = RutaParada
         fields = [
-            'id', 'pedido', 'orden', 'latitud', 'longitud',
+            'id', 'pedido', 'pedido_id', 'orden', 'latitud', 'longitud',
             'distancia_desde_anterior_km', 'tiempo_estimado_desde_anterior_mins', 'estado'
         ]
 
 
 class RutaSerializer(serializers.ModelSerializer):
     paradas = RutaParadaSerializer(many=True, read_only=True)
+    repartidor_info = serializers.SerializerMethodField(read_only=True)
+    pedidos = serializers.SerializerMethodField(read_only=True)
+    total_pedidos = serializers.SerializerMethodField(read_only=True)
     latitud_inicio = serializers.DecimalField(
         max_digits=10,
         decimal_places=8,
@@ -593,8 +620,34 @@ class RutaSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'pedido', 'repartidor', 'latitud_inicio', 'longitud_inicio',
             'aliado', 'tiempo_estimado_mins', 'distancia_km', 'estado_ruta',
-            'capacidad_usada_kg', 'geometria', 'decision_ai', 'fecha_creacion', 'paradas'
+            'capacidad_usada_kg', 'geometria', 'decision_ai', 'fecha_creacion',
+            'paradas', 'pedidos', 'total_pedidos', 'repartidor_info'
         ]
+
+    def get_repartidor_info(self, obj):
+        if not obj.repartidor:
+            return None
+        return {
+            'id': obj.repartidor.id,
+            'nombre': obj.repartidor.nombre,
+            'estado': obj.repartidor.estado,
+        }
+
+    def get_pedidos(self, obj):
+        return [
+            {
+                'pedido_id': parada.pedido_id,
+                'orden_entrega': parada.orden,
+                'estado': parada.pedido.estado,
+                'parada_estado': parada.estado,
+                'cliente': parada.pedido.cliente.nombre,
+                'direccion': parada.pedido.cliente.direccion,
+            }
+            for parada in obj.paradas.select_related('pedido__cliente').order_by('orden')
+        ]
+
+    def get_total_pedidos(self, obj):
+        return obj.paradas.count()
 
 
 class OptionalIntegerOrAutoField(serializers.Field):
@@ -881,13 +934,16 @@ class RutaParadaDetailSerializer(serializers.ModelSerializer):
     cliente_nombre = serializers.SerializerMethodField()
     cliente_telefono = serializers.SerializerMethodField()
     cliente_direccion = serializers.SerializerMethodField()
+    pedido_estado = serializers.SerializerMethodField()
+    prioridad = serializers.SerializerMethodField()
 
     class Meta:
         model = RutaParada
         fields = [
             'id', 'pedido', 'orden', 'latitud', 'longitud',
             'distancia_desde_anterior_km', 'tiempo_estimado_desde_anterior_mins',
-            'estado', 'cliente_nombre', 'cliente_telefono', 'cliente_direccion'
+            'estado', 'pedido_estado', 'prioridad',
+            'cliente_nombre', 'cliente_telefono', 'cliente_direccion'
         ]
         read_only_fields = fields
 
@@ -899,6 +955,12 @@ class RutaParadaDetailSerializer(serializers.ModelSerializer):
 
     def get_cliente_direccion(self, obj):
         return obj.pedido.cliente.direccion
+
+    def get_pedido_estado(self, obj):
+        return obj.pedido.estado
+
+    def get_prioridad(self, obj):
+        return obj.pedido.prioridad
 
 
 class DriverMyRoutesSerializer(serializers.ModelSerializer):

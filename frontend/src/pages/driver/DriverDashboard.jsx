@@ -43,7 +43,7 @@ export const DriverDashboard = () => {
     activeRoutes: driverRoutes.filter((route) => ['asignada', 'en_ruta'].includes(route.estado_ruta)).length,
   }), [driverOrders, driverRoutes]);
 
-  const currentRoute = driverRoutes[0] || null;
+  const currentRoute = driverRoutes.find((route) => ['asignada', 'en_ruta'].includes(route.estado_ruta)) || driverRoutes[0] || null;
 
   const runAction = async (label, callback) => {
     try {
@@ -244,6 +244,34 @@ export const DriverDashboard = () => {
               <span>Ruta #{currentRoute.id}</span>
               <strong>{currentRoute.estado_ruta || 'Sin estado'}</strong>
               <p>Paradas: {currentRoute.total_paradas || currentRoute.paradas?.length || 0}</p>
+              <div className="driver-route-timeline">
+                {(currentRoute.paradas || []).map((stop) => (
+                  <article key={stop.id} className={`driver-route-stop ${stop.estado}`}>
+                    <span className="stop-order">{stop.orden}</span>
+                    <div>
+                      <strong>Pedido #{stop.pedido}</strong>
+                      <p>{stop.cliente_nombre || 'Cliente'} - {stop.cliente_direccion || 'Direccion no disponible'}</p>
+                      <small>Pedido: {stop.pedido_estado || 'Sin estado'} | Parada: {stop.estado}</small>
+                    </div>
+                    <div className="driver-order-actions">
+                      <button
+                        className="btn-secondary"
+                        disabled={actionLoading === `start-${stop.pedido}` || stop.pedido_estado !== 'Asignado'}
+                        onClick={() => runAction(`start-${stop.pedido}`, () => startOrder(stop.pedido))}
+                      >
+                        Iniciar
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        disabled={actionLoading === `deliver-${stop.pedido}` || stop.pedido_estado !== 'En ruta'}
+                        onClick={() => runAction(`deliver-${stop.pedido}`, () => deliverOrder(stop.pedido))}
+                      >
+                        Entregar
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
           )}
         </section>

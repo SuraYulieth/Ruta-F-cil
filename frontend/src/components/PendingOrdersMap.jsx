@@ -63,6 +63,7 @@ export const PendingOrdersMap = ({
   selectedWarehouseId,
   driverLocation = DEFAULT_DRIVER_LOCATION,
   optimization = null,
+  routes: persistedRoutes = [],
 }) => {
   const [activeOrder, setActiveOrder] = useState(null);
   const apiKey = getGoogleMapsApiKey();
@@ -113,8 +114,8 @@ export const PendingOrdersMap = ({
         geometria: routeGeometry,
       }];
     }
-    return [];
-  }, [optimizer, routeGeometry, routeStops, optimization?.route, selectedOrderIds]);
+    return persistedRoutes.filter((route) => ['asignada', 'en_ruta', 'calculada'].includes(String(route.estado_ruta || '').toLowerCase()));
+  }, [optimizer, routeGeometry, routeStops, optimization?.route, selectedOrderIds, persistedRoutes]);
   const unassignedOrders = optimizer?.unassigned_orders || optimizer?.pedidos_descartados || [];
   const routePaths = useMemo(() => routes.map((route) => getRoutePath(route.geometria || route.routeGeometry)), [routes]);
   const selectedSet = useMemo(() => new Set(selectedOrderIds.map(Number)), [selectedOrderIds]);
@@ -138,6 +139,28 @@ export const PendingOrdersMap = ({
     }
     return getStopOrderByPedidoId(routeStops);
   }, [routes, routeStops]);
+  const routeStopMarkers = useMemo(() => (
+    routes.flatMap((route, routeIndex) => (
+      (route.paradas || route.orden_entrega || [])
+        .map((stop) => {
+          const pedido = stop.pedido || {};
+          const lat = toNumber(stop.latitud ?? stop.lat ?? pedido.latitude ?? pedido.latitud);
+          const lng = toNumber(stop.longitud ?? stop.lng ?? pedido.longitude ?? pedido.longitud);
+          if (lat === null || lng === null) return null;
+          return {
+            id: `${route.id || routeIndex}-${stop.id || stop.orden || pedido.id}`,
+            pedidoId: pedido.id ?? stop.pedido_id,
+            routeId: route.id,
+            routeIndex,
+            orden: stop.orden,
+            customer: pedido.customer || pedido.cliente_nombre || pedido.cliente?.nombre || `Pedido #${pedido.id ?? stop.pedido_id}`,
+            destination: pedido.destination || pedido.direccion || pedido.cliente?.direccion || '',
+            position: { lat, lng },
+          };
+        })
+        .filter(Boolean)
+    ))
+  ), [routes]);
 
   if (!apiKey) {
     return (
@@ -228,6 +251,28 @@ export const PendingOrdersMap = ({
                 />
               );
             })}
+
+            {routeStopMarkers.map((stop) => (
+              <MarkerF
+                key={`route-stop-${stop.id}`}
+                position={stop.position}
+                label={{
+                  text: String(stop.orden || stop.pedidoId || ''),
+                  color: '#ffffff',
+                  fontWeight: '800',
+                }}
+                title={`Ruta #${stop.routeId || stop.routeIndex + 1} - Pedido #${stop.pedidoId}`}
+                onClick={() => setActiveOrder(stop)}
+                icon={{
+                  path: window.google.maps.SymbolPath.CIRCLE,
+                  scale: 12,
+                  fillColor: ROUTE_COLORS[stop.routeIndex % ROUTE_COLORS.length],
+                  fillOpacity: 1,
+                  strokeColor: '#ffffff',
+                  strokeWeight: 2,
+                }}
+              />
+            ))}
 
             {routePaths.map((path, index) => (
               path.length > 1 ? (
