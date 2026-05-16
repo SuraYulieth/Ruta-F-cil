@@ -2,9 +2,20 @@ import { useState } from 'react';
 import { PendingOrdersMap } from '../../components/PendingOrdersMap';
 import { RouteOptimizerPanel } from '../../components/RouteOptimizerPanel';
 import { useAppContext } from '../../context/AppContext';
+import { ManualAssignModal } from '../../components/ManualAssignModal';
 
 export const AdminDashboard = () => {
-  const { orders, warehouses, getDrivers, assignOrders, refreshData, importExcelData, loading } = useAppContext();
+  const {
+    orders,
+    warehouses,
+    getDrivers,
+    assignOrders,
+    assignOrder,
+    refreshData,
+    importExcelData,
+    loading,
+  } = useAppContext();
+
   const [isAssigning, setIsAssigning] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -13,10 +24,47 @@ export const AdminDashboard = () => {
   const [importSummary, setImportSummary] = useState(null);
   const [optimization, setOptimization] = useState(null);
   const [driverLocation, setDriverLocation] = useState({ lat: 4.7110, lng: -74.0721 });
+  const [manualAssignModal, setManualAssignModal] = useState({ isOpen: false, order: null });
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentError, setAssignmentError] = useState('');
+  const [assignmentSuccess, setAssignmentSuccess] = useState('');
+
+  const isPendingOrder = (order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente';
+  const isAssignedOrder = (order) => String(order.estado || order.status || '').toLowerCase() === 'asignado';
 
   const drivers = getDrivers();
-  const pendingCount = orders.filter((order) => order.status === 'Pendiente' || order.estado === 'Pendiente').length;
+  const pendingCount = orders.filter(isPendingOrder).length;
   const availableCount = drivers.filter((driver) => driver.status === 'Disponible').length;
+
+  const pendingOrders = orders.filter(isPendingOrder);
+  const assignedOrders = orders.filter(isAssignedOrder);
+
+  const handleOpenManualAssign = (order) => {
+    setAssignmentError('');
+    setAssignmentSuccess('');
+    setManualAssignModal({ isOpen: true, order });
+  };
+
+  const handleCloseManualAssign = () => {
+    setManualAssignModal({ isOpen: false, order: null });
+    setAssignmentError('');
+  };
+
+  const handleConfirmManualAssign = async (orderId, driverId) => {
+    setAssignmentLoading(true);
+    setAssignmentError('');
+    try {
+      await assignOrder(orderId, driverId);
+      setAssignmentSuccess('Pedido asignado correctamente');
+      setTimeout(() => setAssignmentSuccess(''), 3000);
+      handleCloseManualAssign();
+    } catch (error) {
+      const errorMsg = error.message || 'Error al asignar el pedido';
+      setAssignmentError(errorMsg);
+    } finally {
+      setAssignmentLoading(false);
+    }
+  };
 
   const handleAssignOrders = async () => {
     setIsAssigning(true);
@@ -97,6 +145,7 @@ export const AdminDashboard = () => {
           selectedWarehouseId={optimization?.optimizer?.aliado_id}
           routeGeometry={optimization?.optimizer?.geometria}
           routeStops={optimization?.route?.paradas || []}
+          optimization={optimization}
         />
         <RouteOptimizerPanel
           onDriverLocationChange={setDriverLocation}
@@ -120,6 +169,57 @@ export const AdminDashboard = () => {
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="panel">
+          <h2>Pedidos pendientes <span className="count">{pendingCount}</span></h2>
+          {assignmentSuccess && <div className="success-message mt-2">{assignmentSuccess}</div>}
+          <div className="list-container">
+            {pendingOrders.length === 0 ? (
+              <p className="text-muted">No hay pedidos pendientes</p>
+            ) : (
+              pendingOrders.map((order) => (
+                <div key={order.id} className="card">
+                  <div className="card-info">
+                    <h3>#{order.id} - {order.customer}</h3>
+                    <p>{order.destination}</p>
+                    <p>Peso: {order.weightKg} kg | Prioridad: {order.priority}</p>
+                  </div>
+                  <div className="card-actions">
+                    <button
+                      className="btn-small btn-primary"
+                      onClick={() => handleOpenManualAssign(order)}
+                      disabled={assignmentLoading}
+                    >
+                      Asignar manualmente
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="panel">
+          <h2>Pedidos asignados <span className="count">{assignedOrders.length}</span></h2>
+          <div className="list-container">
+            {assignedOrders.length === 0 ? (
+              <p className="text-muted">No hay pedidos asignados</p>
+            ) : (
+              assignedOrders.map((order) => (
+                <div key={order.id} className="card">
+                  <div className="card-info">
+                    <h3>#{order.id} - {order.customer}</h3>
+                    <p>{order.destination}</p>
+                    <p>Repartidor: {order.driverId || order.repartidor_info?.id || 'Asignado'}</p>
+                  </div>
+                  <div className="badge asignado">
+                    {order.status || order.estado}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </section>
 
@@ -150,6 +250,16 @@ export const AdminDashboard = () => {
           </div>
         </section>
       </main>
+
+      <ManualAssignModal
+        isOpen={manualAssignModal.isOpen}
+        order={manualAssignModal.order}
+        drivers={drivers}
+        onAssign={handleConfirmManualAssign}
+        onClose={handleCloseManualAssign}
+        isLoading={assignmentLoading}
+        error={assignmentError}
+      />
     </div>
   );
 };

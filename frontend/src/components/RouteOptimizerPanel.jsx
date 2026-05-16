@@ -6,13 +6,18 @@ import { RouteSummary } from './RouteSummary';
 export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => {
   const { getDrivers, orders, optimizeRoute, assignOptimizedRoute } = useAppContext();
   const drivers = getDrivers();
-  const pendingOrders = orders.filter((order) => order.status === 'Pendiente' || order.estado === 'Pendiente');
+  const pendingOrders = orders.filter(
+    (order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente'
+  );
   const firstDriver = drivers.find((driver) => driver.status === 'Disponible') || drivers[0];
 
   const [driverId, setDriverId] = useState(firstDriver?.id || '');
+  const [routeMode, setRouteMode] = useState('multi_ruta');
   const [lat, setLat] = useState('4.7110');
   const [lng, setLng] = useState('-74.0721');
   const [capacity, setCapacity] = useState('15');
+  const [maxDurationMins, setMaxDurationMins] = useState('90');
+  const [maxAreaKm2, setMaxAreaKm2] = useState('382');
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [optimization, setOptimization] = useState(null);
@@ -22,6 +27,7 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
     () => optimization?.optimizer?.pedidos_seleccionados || [],
     [optimization],
   );
+  const createdRoutes = optimization?.optimizer?.routes || [];
 
   useEffect(() => {
     if (!driverId && firstDriver?.id) {
@@ -50,11 +56,14 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
     setIsOptimizing(true);
     try {
       const result = await optimizeRoute({
+        modo: routeMode,
         repartidor_id: driverId ? Number(driverId) : undefined,
         latitud_inicio: Number(lat),
         longitud_inicio: Number(lng),
         pedidos_candidatos: pendingOrders.map((order) => order.id),
         capacidad_maxima_kg: Number(capacity),
+        max_duration_mins: Number(maxDurationMins),
+        max_area_km2: Number(maxAreaKm2),
         reglas_negocio: { max_orders: 6 },
       });
       setOptimization(result);
@@ -67,7 +76,7 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
   };
 
   const handleAssign = async () => {
-    if (!optimization?.route?.id) return;
+    if (routeMode === 'multi_ruta' || !optimization?.route?.id) return;
     setIsAssigning(true);
     try {
       const route = await assignOptimizedRoute(optimization.route.id);
@@ -87,6 +96,14 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
       </div>
 
       <div className="optimizer-controls">
+        <label>
+          Modo
+          <select value={routeMode} onChange={(event) => setRouteMode(event.target.value)}>
+            <option value="ruta_unica">Ruta única</option>
+            <option value="multi_ruta">Multi ruta</option>
+          </select>
+        </label>
+
         <label>
           Repartidor
           <select value={driverId} onChange={(event) => setDriverId(event.target.value)}>
@@ -111,6 +128,16 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
           Capacidad kg
           <input value={capacity} onChange={(event) => setCapacity(event.target.value)} />
         </label>
+
+        <label>
+          Duración máx. min
+          <input value={maxDurationMins} onChange={(event) => setMaxDurationMins(event.target.value)} />
+        </label>
+
+        <label>
+          Área máx. km²
+          <input value={maxAreaKm2} onChange={(event) => setMaxAreaKm2(event.target.value)} />
+        </label>
       </div>
 
       {error && <div className="error-message">{error}</div>}
@@ -126,9 +153,9 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
         <button
           className="btn-secondary"
           onClick={handleAssign}
-          disabled={isAssigning || !optimization?.route?.id}
+          disabled={isAssigning || routeMode === 'multi_ruta' || !optimization?.route?.id}
         >
-          {isAssigning ? 'Asignando...' : 'Asignar ruta'}
+          {routeMode === 'multi_ruta' ? 'Asignación automática' : isAssigning ? 'Asignando...' : 'Asignar ruta'}
         </button>
       </div>
 
@@ -137,6 +164,10 @@ export const RouteOptimizerPanel = ({ onDriverLocationChange, onOptimized }) => 
 
       {selectedOrderIds.length > 0 && (
         <p className="hint-text">Pedidos seleccionados: {selectedOrderIds.join(', ')}</p>
+      )}
+
+      {createdRoutes.length > 1 && (
+        <p className="hint-text">Se generaron {createdRoutes.length} rutas en esta optimización.</p>
       )}
     </section>
   );

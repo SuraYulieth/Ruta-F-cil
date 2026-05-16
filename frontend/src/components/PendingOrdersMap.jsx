@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 const GOOGLE_MAPS_LIBRARIES = ['places'];
 const DEFAULT_DRIVER_LOCATION = { lat: 4.711, lng: -74.0721 };
 const MAP_CONTAINER_STYLE = { width: '100%', height: '480px' };
+const ROUTE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
+const UNASSIGNED_COLOR = '#dc2626';
 const MAP_OPTIONS = {
   disableDefaultUI: false,
   fullscreenControl: true,
@@ -60,6 +62,7 @@ export const PendingOrdersMap = ({
   warehouses = [],
   selectedWarehouseId,
   driverLocation = DEFAULT_DRIVER_LOCATION,
+  optimization = null,
 }) => {
   const [activeOrder, setActiveOrder] = useState(null);
   const apiKey = getGoogleMapsApiKey();
@@ -77,7 +80,7 @@ export const PendingOrdersMap = ({
 
   const pendingOrders = useMemo(() => (
     orders
-      .filter((order) => order.status === 'Pendiente' || order.estado === 'Pendiente')
+      .filter((order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente')
       .map((order) => ({ ...order, position: getOrderPosition(order) }))
       .filter((order) => order.position)
   ), [orders]);
@@ -87,9 +90,54 @@ export const PendingOrdersMap = ({
       .filter((warehouse) => warehouse.position)
   ), [warehouses]);
 
+  const optimizer = optimization?.optimizer;
+  const routes = useMemo(() => {
+    if (optimizer?.routes?.length) {
+      return optimizer.routes;
+    }
+    if (routeGeometry?.coordinates?.length || routeStops.length) {
+      return [{
+        repartidor_id: optimization?.route?.repartidor?.id || optimization?.route?.repartidor_id,
+        repartidor_nombre: optimization?.route?.repartidor?.nombre || optimization?.route?.repartidor_nombre,
+        aliado_id: optimization?.route?.aliado?.id || optimization?.route?.aliado_id,
+        aliado_nombre: optimization?.route?.aliado?.user?.nombre || optimization?.route?.aliado_nombre,
+        pedidos_seleccionados: selectedOrderIds,
+        orden_entrega: routeStops.map((stop, index) => ({
+          pedido_id: stop.pedido?.id ?? stop.pedido_id,
+          orden: stop.orden ?? index + 1,
+          lat: stop.latitud ?? stop.lat,
+          lng: stop.longitud ?? stop.lng,
+          distancia_desde_anterior_km: stop.distancia_desde_anterior_km,
+          tiempo_estimado_desde_anterior_mins: stop.tiempo_estimado_desde_anterior_mins,
+        })),
+        geometria: routeGeometry,
+      }];
+    }
+    return [];
+  }, [optimizer, routeGeometry, routeStops, optimization?.route, selectedOrderIds]);
+  const unassignedOrders = optimizer?.unassigned_orders || optimizer?.pedidos_descartados || [];
+  const routePaths = useMemo(() => routes.map((route) => getRoutePath(route.geometria || route.routeGeometry)), [routes]);
   const selectedSet = useMemo(() => new Set(selectedOrderIds.map(Number)), [selectedOrderIds]);
-  const stopOrderByPedidoId = useMemo(() => getStopOrderByPedidoId(routeStops), [routeStops]);
-  const routePath = useMemo(() => getRoutePath(routeGeometry), [routeGeometry]);
+  const selectedOrdersByRoute = useMemo(() => {
+    const mapping = new Map();
+    routes.forEach((route, routeIndex) => {
+      (route.pedidos_seleccionados || []).forEach((pedidoId) => {
+        mapping.set(Number(pedidoId), routeIndex);
+      });
+    });
+    return mapping;
+  }, [routes]);
+  const unassignedSet = useMemo(() => new Set(unassignedOrders.map((item) => Number(item.pedido_id))), [unassignedOrders]);
+  const stopOrderByPedidoId = useMemo(() => {
+    if (routes.length) {
+      const entries = routes.flatMap((route, routeIndex) => (route.orden_entrega || []).map((stop) => [
+        Number(stop.pedido?.id ?? stop.pedido_id),
+        { orden: stop.orden, routeIndex },
+      ]));
+      return new Map(entries.filter(([pedidoId]) => Number.isFinite(pedidoId)));
+    }
+    return getStopOrderByPedidoId(routeStops);
+  }, [routes, routeStops]);
 
   if (!apiKey) {
     return (
@@ -160,8 +208,11 @@ export const PendingOrdersMap = ({
             ))}
 
             {pendingOrders.map((order) => {
-              const stopOrder = stopOrderByPedidoId.get(Number(order.id));
-              const labelText = stopOrder ? String(stopOrder) : String(order.id);
+              const stopOrderEntry = stopOrderByPedidoId.get(Number(order.id));
+              const routeIndex = selectedOrdersByRoute.get(Number(order.id));
+              const isUnassigned = unassignedSet.has(Number(order.id));
+              const labelText = stopOrderEntry?.orden ? String(stopOrderEntry.orden) : String(order.id);
+              const routeColor = routeIndex !== undefined ? ROUTE_COLORS[routeIndex % ROUTE_COLORS.length] : null;
 
               return (
                 <MarkerF
@@ -169,25 +220,28 @@ export const PendingOrdersMap = ({
                   position={order.position}
                   label={{
                     text: labelText,
-                    color: selectedSet.has(Number(order.id)) ? '#0f172a' : '#ffffff',
+                    color: isUnassigned ? UNASSIGNED_COLOR : routeColor || (selectedSet.has(Number(order.id)) ? '#0f172a' : '#ffffff'),
                     fontWeight: '800',
                   }}
-                  title={`${order.customer} - ${order.destination}`}
+                  title={`${order.customer} - ${order.destination}${isUnassigned ? ' (no asignado)' : ''}`}
                   onClick={() => setActiveOrder(order)}
                 />
               );
             })}
 
-            {routePath.length > 1 && (
-              <PolylineF
-                path={routePath}
-                options={{
-                  strokeColor: '#2563eb',
-                  strokeOpacity: 0.9,
-                  strokeWeight: 5,
-                }}
-              />
-            )}
+            {routePaths.map((path, index) => (
+              path.length > 1 ? (
+                <PolylineF
+                  key={`route-path-${index}`}
+                  path={path}
+                  options={{
+                    strokeColor: ROUTE_COLORS[index % ROUTE_COLORS.length],
+                    strokeOpacity: 0.9,
+                    strokeWeight: 5,
+                  }}
+                />
+              ) : null
+            ))}
 
             {activeOrder && (
               <InfoWindowF
@@ -198,6 +252,14 @@ export const PendingOrdersMap = ({
                   <strong>{activeOrder.customer}</strong>
                   <p>{activeOrder.destination}</p>
                   <span>Pedido #{activeOrder.id}</span>
+                  {selectedOrdersByRoute.has(Number(activeOrder.id)) && (
+                    <p>Ruta #{selectedOrdersByRoute.get(Number(activeOrder.id)) + 1}</p>
+                  )}
+                  {unassignedSet.has(Number(activeOrder.id)) && (
+                    <p className="warning-text">
+                      {unassignedOrders.find((item) => Number(item.pedido_id) === Number(activeOrder.id))?.motivo || 'Pedido no asignado'}
+                    </p>
+                  )}
                 </div>
               </InfoWindowF>
             )}

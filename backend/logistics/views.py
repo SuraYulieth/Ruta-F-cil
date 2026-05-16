@@ -12,7 +12,8 @@ from .models import CustomUser, Aliado, Repartidor, Cliente, Pedido, Ruta
 from .serializers import (
     CustomUserSerializer, LoginSerializer, AliadoSerializer, 
     RepartidorSerializer, ClienteSerializer, PedidoSerializer, RutaSerializer,
-    RouteOptimizeRequestSerializer
+    RouteOptimizeRequestSerializer, AssignPedidoRequestSerializer,
+    PedidoDetailResponseSerializer, RepartidorInfoSerializer
 )
 from .models import RutaParada
 from .services.ai_route_decision_service import AiRouteDecisionService
@@ -101,8 +102,6 @@ class PedidoViewSet(viewsets.ModelViewSet):
 
         asignaciones = 0
         for pedido in pedidos_pendientes:
-            mejor_repartidor = None
-            
             # Simulamos distancias (al no tener la lat/lon mapeada al 100% en todos lados por simplificacion)
             # En un entorno real se usaría Haversine. Aquí cogemos el primero disponible.
             mejor_repartidor = repartidores_libres.first()
@@ -120,6 +119,47 @@ class PedidoViewSet(viewsets.ModelViewSet):
 
         return Response({"mensaje": f"Se asignaron {asignaciones} pedidos exitosamente."}, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='assign')
+    def assign(self, request, pk=None):
+        """
+        Asignación manual de un pedido individual a un repartidor.
+
+        POST /api/pedidos/{id}/assign/
+        Payload: {"repartidor_id": 3}
+        """
+        pedido = self.get_object()
+
+        if pedido.estado == 'Entregado':
+            return Response(
+                {'error': 'No se puede asignar un pedido entregado.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if pedido.estado == 'Cancelado':
+            return Response(
+                {'error': 'No se puede asignar un pedido cancelado.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = AssignPedidoRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        repartidor_id = serializer.validated_data['repartidor_id']
+        repartidor = CustomUser.objects.get(id=repartidor_id, role='driver')
+
+        es_reasignacion = pedido.repartidor is not None and pedido.estado == 'Asignado'
+        pedido.repartidor = repartidor
+        pedido.estado = 'Asignado'
+        pedido.save(update_fields=['repartidor', 'estado'])
+
+        response_data = PedidoDetailResponseSerializer(pedido).data
+        return Response(
+            {
+                'message': 'Pedido reasignado correctamente' if es_reasignacion else 'Pedido asignado correctamente',
+                'pedido': response_data,
+            },
+            status=status.HTTP_200_OK,
+        )
 class RepartidorViewSet(viewsets.ModelViewSet):
     queryset = Repartidor.objects.all()
     serializer_class = RepartidorSerializer
@@ -137,23 +177,72 @@ class RutaViewSet(viewsets.ModelViewSet):
         request_serializer = RouteOptimizeRequestSerializer(data=request.data)
         request_serializer.is_valid(raise_exception=True)
         data = request_serializer.validated_data
+        mode = data.get('modo', 'ruta_unica')
 
         optimizer = RouteOptimizerService()
-        result = optimizer.optimize(
-            repartidor_id=data.get('repartidor_id'),
-            latitud_inicial=data.get('latitud_inicial'),
-            longitud_inicial=data.get('longitud_inicial'),
-            pedidos_candidatos=data.get('pedidos_candidatos'),
-            capacidad_maxima=data.get('capacidad_maxima'),
-            reglas_negocio=data.get('reglas_negocio'),
-        )
+        if mode == 'multi_ruta':
+            result = optimizer.optimize_all_pending_orders(
+                repartidor_id=data.get('repartidor_id'),
+                latitud_inicial=data.get('latitud_inicial'),
+                longitud_inicial=data.get('longitud_inicial'),
+                pedidos_candidatos=data.get('pedidos_candidatos'),
+                capacidad_maxima=data.get('capacidad_maxima'),
+                reglas_negocio=data.get('reglas_negocio'),
+                max_duration_mins=data.get('max_duration_mins'),
+                max_area_km2=data.get('max_area_km2'),
+                max_distance_km=data.get('max_distance_km'),
+            )
+        else:
+            result = optimizer.optimize(
+                repartidor_id=data.get('repartidor_id'),
+                latitud_inicial=data.get('latitud_inicial'),
+                longitud_inicial=data.get('longitud_inicial'),
+                pedidos_candidatos=data.get('pedidos_candidatos'),
+                capacidad_maxima=data.get('capacidad_maxima'),
+                reglas_negocio=data.get('reglas_negocio'),
+            )
+
         decision = AiRouteDecisionService().explain(result)
         metrics = RouteMetricsService().build(result)
+
+        if mode == 'multi_ruta':
+            if not result.get('routes'):
+                return Response(
+                    {
+                        'route': None,
+                        'routes': [],
+                        'unassigned_orders': result.get('unassigned_orders', []),
+                        'summary': result.get('summary', {}),
+                        'decision': decision,
+                        'metrics': metrics,
+                        'optimizer': self._serialize_optimizer_result(result),
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            created_routes = []
+            with transaction.atomic():
+                for plan in result['routes']:
+                    created_routes.append(self._create_route_from_plan(plan, decision, metrics))
+
+            return Response(
+                {
+                    'route': created_routes[0] if created_routes else None,
+                    'routes': created_routes,
+                    'unassigned_orders': result.get('unassigned_orders', []),
+                    'summary': result.get('summary', {}),
+                    'decision': decision,
+                    'metrics': metrics,
+                    'optimizer': self._serialize_optimizer_result(result),
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
         if not result['pedidos_seleccionados']:
             return Response(
                 {
                     'route': None,
+                    'routes': [],
                     'decision': decision,
                     'metrics': metrics,
                     'optimizer': self._serialize_optimizer_result(result),
@@ -161,42 +250,12 @@ class RutaViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_200_OK,
             )
 
-        repartidor = CustomUser.objects.filter(id=result['repartidor_id'], role='driver').first()
-        if not repartidor:
-            return Response(
-                {'error': 'No hay repartidor viable para la ruta optimizada.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        aliado = Aliado.objects.filter(id=result.get('aliado_id')).first()
-
-        with transaction.atomic():
-            route = Ruta.objects.create(
-                repartidor=repartidor,
-                aliado=aliado,
-                latitud_inicio=to_decimal(result['start']['lat']),
-                longitud_inicio=to_decimal(result['start']['lng']),
-                tiempo_estimado_mins=result['duracion_total_mins'],
-                distancia_km=result['distancia_total_km'],
-                capacidad_usada_kg=result['capacidad_usada_kg'],
-                geometria=result['geometria'],
-                decision_ai={**decision, 'metrics': metrics},
-            )
-            for index, stop in enumerate(result['orden_entrega'], start=1):
-                if stop['pedido'].aliado_id:
-                    stop['pedido'].save(update_fields=['aliado'])
-                RutaParada.objects.create(
-                    ruta=route,
-                    pedido=stop['pedido'],
-                    orden=index,
-                    latitud=to_decimal(stop['lat']),
-                    longitud=to_decimal(stop['lng']),
-                    distancia_desde_anterior_km=stop['distancia_desde_anterior_km'],
-                    tiempo_estimado_desde_anterior_mins=stop['tiempo_estimado_desde_anterior_mins'],
-                )
+        route = self._create_route_from_plan(result, decision, metrics)
 
         return Response(
             {
-                'route': RutaSerializer(route).data,
+                'route': route,
+                'routes': [route],
                 'decision': decision,
                 'metrics': metrics,
                 'optimizer': self._serialize_optimizer_result(result),
@@ -262,7 +321,113 @@ class RutaViewSet(viewsets.ModelViewSet):
 
         return Response(RutaSerializer(route).data, status=status.HTTP_200_OK)
 
+    def _create_route_from_plan(self, plan, decision, metrics):
+        repartidor = CustomUser.objects.filter(id=plan['repartidor_id'], role='driver').first()
+        if not repartidor:
+            raise ValueError('No hay repartidor viable para la ruta optimizada.')
+
+        aliado = Aliado.objects.filter(id=plan.get('aliado_id')).first()
+        selected_orders = plan.get('pedidos_seleccionados', [])
+        primary_order = selected_orders[0] if selected_orders else None
+
+        route = Ruta.objects.create(
+            pedido=primary_order,
+            repartidor=repartidor,
+            aliado=aliado,
+            latitud_inicio=to_decimal(plan['start']['lat']),
+            longitud_inicio=to_decimal(plan['start']['lng']),
+            tiempo_estimado_mins=plan['duracion_total_mins'],
+            distancia_km=plan['distancia_total_km'],
+            capacidad_usada_kg=plan['capacidad_usada_kg'],
+            geometria=plan.get('geometria'),
+            decision_ai={
+                **decision,
+                'metrics': metrics,
+                'route_summary': {
+                    'repartidor_id': plan.get('repartidor_id'),
+                    'pedidos_seleccionados': [pedido.id for pedido in selected_orders],
+                    'distancia_total_km': plan.get('distancia_total_km'),
+                    'duracion_total_mins': plan.get('duracion_total_mins'),
+                },
+            },
+        )
+
+        for index, stop in enumerate(plan['orden_entrega'], start=1):
+            pedido = stop['pedido']
+            if pedido.aliado_id:
+                pedido.save(update_fields=['aliado'])
+            pedido.repartidor = repartidor
+            pedido.estado = 'Asignado'
+            pedido.save(update_fields=['repartidor', 'estado'])
+            RutaParada.objects.create(
+                ruta=route,
+                pedido=pedido,
+                orden=index,
+                latitud=to_decimal(stop['lat']),
+                longitud=to_decimal(stop['lng']),
+                distancia_desde_anterior_km=stop['distancia_desde_anterior_km'],
+                tiempo_estimado_desde_anterior_mins=stop['tiempo_estimado_desde_anterior_mins'],
+            )
+
+        return RutaSerializer(route).data
+
+    def _serialize_route_plan(self, plan):
+        pedidos_seleccionados = plan.get('pedidos_seleccionados', [])
+        orden_entrega = plan.get('orden_entrega', [])
+        return {
+            'repartidor_id': plan.get('repartidor_id'),
+            'repartidor_nombre': plan.get('repartidor_nombre'),
+            'repartidor_motivo': plan.get('repartidor_motivo'),
+            'aliado_id': plan.get('aliado_id'),
+            'aliado_nombre': plan.get('aliado_nombre'),
+            'start': plan.get('start'),
+            'pedidos_seleccionados': [pedido.id for pedido in pedidos_seleccionados],
+            'orden_entrega': [
+                {
+                    'pedido_id': stop['pedido'].id,
+                    'orden': index,
+                    'lat': stop['lat'],
+                    'lng': stop['lng'],
+                    'distancia_desde_anterior_km': stop['distancia_desde_anterior_km'],
+                    'tiempo_estimado_desde_anterior_mins': stop['tiempo_estimado_desde_anterior_mins'],
+                }
+                for index, stop in enumerate(orden_entrega, start=1)
+            ],
+            'distancia_total_km': plan.get('distancia_total_km'),
+            'duracion_total_mins': plan.get('duracion_total_mins'),
+            'capacidad_usada_kg': plan.get('capacidad_usada_kg'),
+            'geometria': plan.get('geometria'),
+            'radio_permitido_km': plan.get('radio_permitido_km'),
+            'radio_permitido_m2': plan.get('radio_permitido_m2'),
+            'dentro_radio_permitido': plan.get('dentro_radio_permitido'),
+            'max_duration_mins': plan.get('max_duration_mins'),
+            'max_distance_km': plan.get('max_distance_km'),
+            'scoring': plan.get('scoring', []),
+            'pedidos_descartados_por_scoring': plan.get('pedidos_descartados_por_scoring', []),
+        }
+
     def _serialize_optimizer_result(self, result):
+        if result.get('routes'):
+            routes = [self._serialize_route_plan(route) for route in result.get('routes', [])]
+            route_principal = routes[0] if routes else None
+            pedidos_seleccionados = [pedido_id for route in routes for pedido_id in route['pedidos_seleccionados']]
+            return {
+                'modo': result.get('modo', 'multi_ruta'),
+                'routes': routes,
+                'route': route_principal,
+                'ruta_principal': route_principal,
+                'unassigned_orders': result.get('unassigned_orders', []),
+                'pedidos_seleccionados': pedidos_seleccionados,
+                'pedidos_descartados': result.get('pedidos_descartados', []),
+                'distancia_total_km': result.get('distancia_total_km'),
+                'duracion_total_mins': result.get('duracion_total_mins'),
+                'capacidad_total_usada_kg': result.get('capacidad_total_usada_kg'),
+                'summary': result.get('summary', {}),
+                'radio_permitido_km': result.get('radio_permitido_km'),
+                'radio_permitido_m2': result.get('radio_permitido_m2'),
+                'explicacion': result.get('explicacion'),
+            }
+
         return {
             'pedidos_seleccionados': [pedido.id for pedido in result['pedidos_seleccionados']],
             'orden_entrega': [

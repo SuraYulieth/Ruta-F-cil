@@ -11,7 +11,7 @@ try:
 except ImportError:
     Workbook = None
 
-from .models import Aliado, Cliente, CustomUser, Pedido, Repartidor
+from .models import Aliado, Cliente, CustomUser, Pedido, Repartidor, Ruta, RutaParada
 from .services.route_metrics_service import RouteMetricsService
 from .services.route_optimizer_service import RouteOptimizerService, haversine_km
 
@@ -84,6 +84,45 @@ class RouteOptimizerServiceTests(TestCase):
         result = RouteOptimizerService().optimize(capacidad_maxima=10)
         self.assertEqual(result['repartidor_id'], self.driver.id)
 
+    def test_optimizer_multi_route_creates_multiple_routes_without_repeating_orders(self):
+        second_driver = CustomUser.objects.create_user(
+            username='driver2',
+            password='123',
+            role='driver',
+            nombre='Driver Dos',
+        )
+        Repartidor.objects.create(
+            user=second_driver,
+            latitud_actual=4.8000,
+            longitud_actual=-74.2000,
+            capacidad_maxima_kg=10,
+        )
+
+        cliente_c = Cliente.objects.create(
+            nombre='Cliente C',
+            direccion='Zona C',
+            latitud=4.8005,
+            longitud=-74.1995,
+        )
+        pedido_c = Pedido.objects.create(cliente=cliente_c, prioridad='alta', peso_total_kg=2)
+
+        response = self.client.post('/api/routes/optimize/', {
+            'modo': 'multi_ruta',
+            'pedidos_candidatos': [self.pedido_a.id, self.pedido_b.id, pedido_c.id],
+            'max_duration_mins': 90,
+            'max_area_km2': 382,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['summary']['rutas_creadas'], 2)
+        self.assertEqual(len(response.data['routes']), 2)
+
+        all_selected = response.data['optimizer']['pedidos_seleccionados']
+        self.assertCountEqual(all_selected, [self.pedido_a.id, self.pedido_b.id, pedido_c.id])
+        self.assertEqual(len(all_selected), len(set(all_selected)))
+        self.assertEqual(Ruta.objects.count(), 2)
+        self.assertEqual(RutaParada.objects.count(), 3)
+
 
 class RouteApiTests(TestCase):
     def setUp(self):
@@ -133,6 +172,20 @@ class RouteApiTests(TestCase):
         self.assertEqual(response.data['optimizer']['pedidos_seleccionados'], [self.pedido.id])
         self.assertEqual(len(response.data['route']['paradas']), 1)
         self.assertIn('metrics', response.data)
+
+    def test_manual_assign_endpoint_updates_status_and_driver(self):
+        response = self.client.post(
+            f'/api/pedidos/{self.pedido.id}/assign/',
+            {'repartidor_id': self.driver.id},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.pedido.refresh_from_db()
+        self.assertEqual(self.pedido.estado, 'Asignado')
+        self.assertEqual(self.pedido.repartidor_id, self.driver.id)
+        self.assertEqual(response.data['pedido']['estado'], 'Asignado')
+        self.assertEqual(response.data['pedido']['id'], self.pedido.id)
 
 
 class RouteMetricsServiceTests(TestCase):

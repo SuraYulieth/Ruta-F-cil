@@ -64,7 +64,7 @@ export const api = {
     });
   },
   getPendingOrders: () => request('/pedidos/').then((orders) => (
-    orders.filter((order) => order.status === 'Pendiente' || order.estado === 'Pendiente')
+    orders.filter((order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente')
   )),
   login: (username, password) => request('/login/', {
     method: 'POST',
@@ -97,13 +97,21 @@ export const api = {
   autoAssignOrders: () => request('/pedidos/asignar_automatico/', {
     method: 'POST',
   }),
+  assignOrderManually: (orderId, driverId) => request(`/pedidos/${orderId}/assign/`, {
+    method: 'POST',
+    body: JSON.stringify({ repartidor_id: driverId }),
+  }),
   optimizeRoute: (payload) => {
     const normalizedPayload = {
+      modo: payload.modo,
       repartidor_id: payload.repartidor_id,
       latitud_inicial: payload.latitud_inicial ?? payload.latitud_inicio,
       longitud_inicial: payload.longitud_inicial ?? payload.longitud_inicio,
       pedidos_candidatos: payload.pedidos_candidatos,
       capacidad_maxima: payload.capacidad_maxima ?? payload.capacidad_maxima_kg,
+      max_duration_mins: payload.max_duration_mins,
+      max_area_km2: payload.max_area_km2,
+      max_distance_km: payload.max_distance_km,
       reglas_negocio: payload.reglas_negocio,
     };
 

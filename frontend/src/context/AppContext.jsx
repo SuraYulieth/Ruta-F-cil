@@ -136,6 +136,30 @@ export const AppProvider = ({ children }) => {
     await refreshData();
     return result;
   };
+  const assignOrder = async (orderId, driverId) => {
+    try {
+      const result = await api.assignOrderManually(orderId, driverId);
+
+      setOrders((prev) => (
+        prev.map((order) => (
+          Number(order.id) === Number(orderId)
+            ? {
+                ...order,
+                estado: 'Asignado',
+                status: 'Asignado',
+                driverId: Number(driverId),
+              }
+            : order
+        ))
+      ));
+
+      await refreshData();
+      return result;
+    } catch (error) {
+      console.error('Error al asignar pedido:', error);
+      throw error;
+    }
+  };
   const getPendingOrders = async () => api.getPendingOrders();
   const getRoute = async (routeId) => api.getRoute(routeId);
   const getRouteEvidence = async (routeId) => api.getRouteEvidence(routeId);
@@ -166,6 +190,7 @@ export const AppProvider = ({ children }) => {
       updateDriverStatus,
       assignOrders,
       optimizeRoute,
+      assignOrder,
       importExcelData,
       getPendingOrders,
       getRoute,
