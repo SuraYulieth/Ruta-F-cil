@@ -1,6 +1,7 @@
 import { GoogleMap, InfoWindowF, MarkerF, PolylineF, useJsApiLoader } from '@react-google-maps/api';
 import { useMemo, useState } from 'react';
 
+const GOOGLE_MAPS_LIBRARIES = ['places'];
 const DEFAULT_DRIVER_LOCATION = { lat: 4.711, lng: -74.0721 };
 const MAP_CONTAINER_STYLE = { width: '100%', height: '480px' };
 const MAP_OPTIONS = {
@@ -66,6 +67,7 @@ export const PendingOrdersMap = ({
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'ruta-facil-google-maps',
     googleMapsApiKey: apiKey || '',
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
   const driverPosition = {

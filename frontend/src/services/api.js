@@ -12,6 +12,24 @@ const apiPath = (path) => `${API_BASE_URL}${path}`;
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
+const getErrorMessage = (payload) => {
+  if (!payload) return null;
+  if (typeof payload === 'string') return payload;
+  if (payload.error) return payload.error;
+  if (payload.detail) return payload.detail;
+  if (typeof payload === 'object') {
+    const [field, value] = Object.entries(payload)[0] || [];
+    const message = Array.isArray(value) ? value[0] : value;
+    if (typeof message === 'string') {
+      return field ? `${field}: ${message}` : message;
+    }
+    if (message && typeof message === 'object') {
+      return getErrorMessage(message);
+    }
+  }
+  return null;
+};
+
 async function request(path, options = {}) {
   const headers = options.body instanceof FormData ? {} : jsonHeaders;
   const response = await fetch(apiPath(path), {
@@ -21,7 +39,7 @@ async function request(path, options = {}) {
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error || 'Error al comunicarse con el servidor');
+    throw new Error(getErrorMessage(payload) || 'Error al comunicarse con el servidor');
   }
   return payload;
 }
@@ -59,6 +77,14 @@ export const api = {
   createUser: (userData) => request('/users/', {
     method: 'POST',
     body: JSON.stringify(userData),
+  }),
+  createWarehouse: (warehouseData) => request('/aliados/', {
+    method: 'POST',
+    body: JSON.stringify(warehouseData),
+  }),
+  createDriverProfile: (driverData) => request('/repartidores/', {
+    method: 'POST',
+    body: JSON.stringify(driverData),
   }),
   updateOrder: (orderId, data) => request(`/pedidos/${orderId}/`, {
     method: 'PATCH',

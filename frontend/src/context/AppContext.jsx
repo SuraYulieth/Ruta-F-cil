@@ -72,16 +72,31 @@ export const AppProvider = ({ children }) => {
       await fetchData();
     } catch (error) {
       console.error('Error al agregar pedido:', error);
+      throw error;
     }
   };
 
   const addUser = async (userData) => {
     try {
-      await api.createUser(userData);
+      const createdUser = await api.createUser(userData);
       await fetchData();
+      return createdUser;
     } catch (error) {
       console.error('Error al agregar usuario:', error);
+      throw error;
     }
+  };
+
+  const addWarehouse = async (warehouseData) => {
+    const createdWarehouse = await api.createWarehouse(warehouseData);
+    await fetchData();
+    return createdWarehouse;
+  };
+
+  const addDriverProfile = async (driverData) => {
+    const createdDriver = await api.createDriverProfile(driverData);
+    await fetchData();
+    return createdDriver;
   };
 
   const getDrivers = () => users.filter((user) => user.role === 'driver');
@@ -144,6 +159,8 @@ export const AppProvider = ({ children }) => {
       logout,
       addOrder,
       addUser,
+      addWarehouse,
+      addDriverProfile,
       getDrivers,
       updateOrderStatus,
       updateDriverStatus,

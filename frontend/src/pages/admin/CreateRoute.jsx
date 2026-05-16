@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AddressAutocompleteMap } from '../../components/AddressAutocompleteMap';
 import { useAppContext } from '../../context/AppContext';
 
 export const CreateRoute = () => {
@@ -12,6 +13,7 @@ export const CreateRoute = () => {
     weightKg: '0',
   });
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const updateField = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -19,34 +21,44 @@ export const CreateRoute = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    await addOrder({
-      ...form,
-      latitude: form.latitude ? Number(form.latitude) : null,
-      longitude: form.longitude ? Number(form.longitude) : null,
-      weightKg: Number(form.weightKg || 0),
-    });
-    setForm({
-      customer: '',
-      destination: '',
-      latitude: '',
-      longitude: '',
-      priority: 'normal',
-      weightKg: '0',
-    });
-    setSuccessMsg('Pedido creado exitosamente');
-    setTimeout(() => setSuccessMsg(''), 3000);
+    setErrorMsg('');
+    if (!form.destination || !form.latitude || !form.longitude) {
+      setErrorMsg('Selecciona una direccion valida para autocompletar latitud y longitud.');
+      return;
+    }
+    try {
+      await addOrder({
+        ...form,
+        latitude: form.latitude ? Number(form.latitude) : null,
+        longitude: form.longitude ? Number(form.longitude) : null,
+        weightKg: Number(form.weightKg || 0),
+      });
+      setForm({
+        customer: '',
+        destination: '',
+        latitude: '',
+        longitude: '',
+        priority: 'normal',
+        weightKg: '0',
+      });
+      setSuccessMsg('Pedido creado exitosamente');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (error) {
+      setErrorMsg(error.message || 'No se pudo crear el pedido.');
+    }
   };
 
   return (
     <div className="dashboard-content">
       <header className="page-header">
         <h1>Crear nuevo pedido</h1>
-        <p>Registra destino, coordenadas y datos logisticos para optimizar rutas.</p>
+        <p>Registra destino con Google Places; las coordenadas se guardan automaticamente.</p>
       </header>
 
       <section className="panel form-panel">
         <form onSubmit={handleSubmit} className="custom-form">
           {successMsg && <div className="success-message">{successMsg}</div>}
+          {errorMsg && <div className="error-message">{errorMsg}</div>}
 
           <div className="form-group">
             <label>Cliente / negocio</label>
@@ -59,35 +71,17 @@ export const CreateRoute = () => {
             />
           </div>
 
-          <div className="form-group">
-            <label>Direccion de destino</label>
-            <input
-              type="text"
-              value={form.destination}
-              onChange={(event) => updateField('destination', event.target.value)}
-              placeholder="Ej: Calle 50 # 10-20"
-              required
-            />
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>Latitud</label>
-              <input
-                value={form.latitude}
-                onChange={(event) => updateField('latitude', event.target.value)}
-                placeholder="4.7110"
-              />
-            </div>
-            <div className="form-group">
-              <label>Longitud</label>
-              <input
-                value={form.longitude}
-                onChange={(event) => updateField('longitude', event.target.value)}
-                placeholder="-74.0721"
-              />
-            </div>
-          </div>
+          <AddressAutocompleteMap
+            label="Direccion de destino"
+            value={form.destination}
+            latitude={form.latitude}
+            longitude={form.longitude}
+            onChange={({ address, lat, lng }) => {
+              updateField('destination', address);
+              updateField('latitude', lat ?? '');
+              updateField('longitude', lng ?? '');
+            }}
+          />
 
           <div className="form-row">
             <div className="form-group">

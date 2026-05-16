@@ -6,6 +6,19 @@ from .models import (
 )
 
 
+def validate_lat_lng(lat, lng, required=False):
+    if required and (lat is None or lng is None):
+        raise serializers.ValidationError('La direccion debe tener latitud y longitud validas.')
+    if lat is None and lng is None:
+        return
+    if lat is None or lng is None:
+        raise serializers.ValidationError('Latitud y longitud deben enviarse juntas.')
+    if not (-90 <= float(lat) <= 90):
+        raise serializers.ValidationError('Latitud fuera de rango valido.')
+    if not (-180 <= float(lng) <= 180):
+        raise serializers.ValidationError('Longitud fuera de rango valido.')
+
+
 class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
@@ -35,6 +48,15 @@ class AliadoSerializer(serializers.ModelSerializer):
         model = Aliado
         fields = ['id', 'user', 'name', 'direccion', 'latitud', 'longitud', 'latitude', 'longitude']
 
+    def validate(self, attrs):
+        direccion = attrs.get('direccion') or getattr(self.instance, 'direccion', None)
+        lat = attrs.get('latitud', getattr(self.instance, 'latitud', None))
+        lng = attrs.get('longitud', getattr(self.instance, 'longitud', None))
+        if not direccion:
+            raise serializers.ValidationError({'direccion': 'La direccion de la bodega es obligatoria.'})
+        validate_lat_lng(lat, lng, required=True)
+        return attrs
+
 
 class RepartidorSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='user.nombre', read_only=True)
@@ -49,11 +71,29 @@ class RepartidorSerializer(serializers.ModelSerializer):
             'latitude', 'longitude', 'capacidad_maxima_kg', 'volumen_maximo_m3'
         ]
 
+    def validate(self, attrs):
+        lat = attrs.get('latitud_actual', getattr(self.instance, 'latitud_actual', None))
+        lng = attrs.get('longitud_actual', getattr(self.instance, 'longitud_actual', None))
+        validate_lat_lng(lat, lng, required=True)
+        capacity = attrs.get('capacidad_maxima_kg')
+        if capacity is not None and capacity <= 0:
+            raise serializers.ValidationError({'capacidad_maxima_kg': 'La capacidad debe ser mayor que cero.'})
+        return attrs
+
 
 class ClienteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cliente
         fields = '__all__'
+
+    def validate(self, attrs):
+        direccion = attrs.get('direccion') or getattr(self.instance, 'direccion', None)
+        lat = attrs.get('latitud', getattr(self.instance, 'latitud', None))
+        lng = attrs.get('longitud', getattr(self.instance, 'longitud', None))
+        if not direccion:
+            raise serializers.ValidationError({'direccion': 'La direccion del cliente es obligatoria.'})
+        validate_lat_lng(lat, lng, required=True)
+        return attrs
 
 
 class ProductoSerializer(serializers.ModelSerializer):
@@ -112,6 +152,7 @@ class PedidoSerializer(serializers.ModelSerializer):
         direccion_cliente = cliente_data.get('direccion', 'Direccion no especificada')
         latitud_cliente = cliente_data.get('latitud')
         longitud_cliente = cliente_data.get('longitud')
+        validate_lat_lng(latitud_cliente, longitud_cliente, required=True)
 
         cliente, created = Cliente.objects.get_or_create(
             nombre=nombre_cliente,
