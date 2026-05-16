@@ -22,6 +22,7 @@ class AiRouteDecisionService:
         driver_diagnostics = optimizer_result.get('driver_diagnostics', {}) or {}
         allowed_radius = float(optimizer_result.get('radio_permitido_km') or MAX_ROUTE_RADIUS_KM)
         total_routes = int(optimizer_result.get('total_rutas') or summary.get('rutas_creadas') or len(routes) or 0)
+        outside_radius_drivers = int(driver_diagnostics.get('fuera_de_radio') or 0)
 
         alerts = []
         recommendations = []
@@ -54,6 +55,15 @@ class AiRouteDecisionService:
         if total_routes > 1:
             alerts.append(f'Se crearon {total_routes} rutas para cubrir pedidos remanentes sin repetir pedidos.')
             recommendations.append('Revisar cada ruta por separado y validar ventanas de entrega reales por repartidor.')
+
+        if outside_radius_drivers > 0:
+            alerts.append(
+                f'{outside_radius_drivers} repartidor(es) están fuera del radio permitido '
+                f'({allowed_radius:.2f} km).'
+            )
+            recommendations.append(
+                'Revisar detalle de repartidores fuera de radio para moverlos al centro de demanda sugerido.'
+            )
 
         if duration > DURATION_WARNING_MINUTES:
             alerts.append(f'La optimización acumulada supera {DURATION_WARNING_MINUTES} minutos ({duration} min).')

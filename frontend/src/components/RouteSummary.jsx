@@ -160,14 +160,13 @@ export const RouteSummary = ({ optimization }) => {
         </div>
       )}
 
-      {hasDriverDiagnostics && routes.length === 0 && (
+      {hasDriverDiagnostics && (
         <div className="decision-box driver-diagnostic-box">
           <div className="summary-title-row">
             <div>
               <h3>Diagnostico de repartidores</h3>
               <p className="hint-text">
-                Actualmente no hay repartidores aptos para esta optimizacion. Activa un repartidor,
-                verifica que tenga coordenadas y que no este en una ruta activa.
+                Estado operativo de cobertura para optimizacion y activacion por zona de demanda.
               </p>
             </div>
             <button
@@ -247,6 +246,18 @@ export const RouteSummary = ({ optimization }) => {
                   <p>
                     Distancia actual: {driver.distancia_al_centro_demanda_km} km | Radio maximo: {driver.radio_maximo_km} km
                   </p>
+                  {driver.zona_sugerida && <p>Zona sugerida: {driver.zona_sugerida}</p>}
+                  {driver.mensaje_activacion && <p>{driver.mensaje_activacion}</p>}
+                  {driver.google_maps_recomendado_url && (
+                    <a
+                      className="btn-secondary compact coverage-map-link"
+                      href={driver.google_maps_recomendado_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Ver zona sugerida en mapa
+                    </a>
+                  )}
                   <p>{driver.motivo}</p>
                 </article>
               ))}

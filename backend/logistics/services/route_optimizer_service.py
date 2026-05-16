@@ -866,8 +866,19 @@ class RouteOptimizerService:
                 ),
                 'radio_maximo_km': round(MAX_ROUTE_RADIUS_KM, 2),
                 'zona_sugerida': (
-                    'Ubicarse cerca del centro de los pedidos pendientes.'
+                    self._build_suggested_zone_label(centroid)
                     if outside_radius else None
+                ),
+                'google_maps_recomendado_url': (
+                    f'https://www.google.com/maps?q={centroid["latitud"]},{centroid["longitud"]}'
+                    if outside_radius and centroid else None
+                ),
+                'mensaje_activacion': self._build_driver_activation_message(
+                    driver_name=user.nombre or user.username,
+                    outside_radius=outside_radius,
+                    current_coords=coords,
+                    centroid=centroid,
+                    distance_to_centroid=distance_to_centroid,
                 ),
             })
 
@@ -965,6 +976,30 @@ class RouteOptimizerService:
         if outside_radius:
             return 'Esta fuera del radio permitido para estos pedidos.'
         return 'Apto para optimizar.'
+
+    def _build_suggested_zone_label(self, centroid):
+        if not centroid:
+            return 'Sin zona sugerida por falta de centro de demanda.'
+        return (
+            'Zona sugerida: centro de demanda '
+            f'({centroid["latitud"]}, {centroid["longitud"]}).'
+        )
+
+    def _build_driver_activation_message(self, driver_name, outside_radius, current_coords, centroid, distance_to_centroid):
+        if not outside_radius:
+            return 'Dentro del radio permitido para optimización.'
+
+        if not current_coords or not centroid or distance_to_centroid is None:
+            return (
+                f'{driver_name} está fuera del radio permitido. '
+                'Actualiza su ubicación para calcular una zona sugerida precisa.'
+            )
+
+        return (
+            f'{driver_name} está a {distance_to_centroid:.2f} km del centro de demanda. '
+            f'Debe acercarse a latitud {centroid["latitud"]}, longitud {centroid["longitud"]} '
+            f'para quedar dentro de {MAX_ROUTE_RADIUS_KM:.2f} km.'
+        )
 
     def _driver_has_active_route(self, user):
         return Ruta.objects.filter(

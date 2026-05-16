@@ -114,6 +114,30 @@ export const PendingOrdersMap = ({
       })
       .filter(Boolean)
   ), [driverDiagnostics]);
+  const outsideRadiusRecommendedMarkers = useMemo(() => (
+    (driverDiagnostics?.detalle || [])
+      .map((driver) => {
+        if (
+          Number(driver.distancia_al_centro_demanda_km) <= Number(driver.radio_maximo_km || 0)
+          || !driver.coordenadas_recomendadas
+        ) {
+          return null;
+        }
+
+        const lat = toNumber(driver.coordenadas_recomendadas?.latitud);
+        const lng = toNumber(driver.coordenadas_recomendadas?.longitud);
+        if (lat === null || lng === null) return null;
+
+        return {
+          id: driver.id,
+          nombre: driver.nombre,
+          position: { lat, lng },
+          zona: driver.zona_sugerida,
+          message: driver.mensaje_activacion,
+        };
+      })
+      .filter(Boolean)
+  ), [driverDiagnostics]);
   const routes = useMemo(() => {
     if (optimizer?.routes?.length) {
       return optimizer.routes;
@@ -344,8 +368,36 @@ export const PendingOrdersMap = ({
                 onClick={() => setActiveOrder({
                   id: `driver-${driver.id}`,
                   customer: driver.nombre,
-                  destination: `${driver.motivo}${driver.distancia_al_centro_demanda_km ? ` (${driver.distancia_al_centro_demanda_km} km)` : ''}`,
+                  destination: driver.mensaje_activacion
+                    || `${driver.motivo}${driver.distancia_al_centro_demanda_km ? ` (${driver.distancia_al_centro_demanda_km} km)` : ''}`,
                   position: driver.position,
+                })}
+              />
+            ))}
+
+            {outsideRadiusRecommendedMarkers.map((marker) => (
+              <MarkerF
+                key={`driver-recommended-${marker.id}`}
+                position={marker.position}
+                label={{
+                  text: 'S',
+                  color: '#0f172a',
+                  fontWeight: '900',
+                }}
+                title={`Zona sugerida para ${marker.nombre}`}
+                icon={{
+                  path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+                  scale: 5,
+                  fillColor: '#fde047',
+                  fillOpacity: 1,
+                  strokeColor: '#0f172a',
+                  strokeWeight: 1.5,
+                }}
+                onClick={() => setActiveOrder({
+                  id: `driver-recommended-${marker.id}`,
+                  customer: `Zona sugerida ${marker.nombre}`,
+                  destination: marker.message || marker.zona || 'Mover repartidor a esta zona para habilitar optimizacion.',
+                  position: marker.position,
                 })}
               />
             ))}
