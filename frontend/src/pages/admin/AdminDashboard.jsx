@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PendingOrdersMap } from '../../components/PendingOrdersMap';
 import { RouteOptimizerPanel } from '../../components/RouteOptimizerPanel';
 import { useAppContext } from '../../context/AppContext';
@@ -16,6 +16,8 @@ const getDriverCoordinates = (driver) => {
 };
 
 export const AdminDashboard = () => {
+  const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
   const {
     orders,
     routes,
@@ -55,6 +57,11 @@ export const AdminDashboard = () => {
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [assignmentError, setAssignmentError] = useState('');
   const [assignmentSuccess, setAssignmentSuccess] = useState('');
+  const [statusFilter, setStatusFilter] = useState('todos');
+  const [customerFilter, setCustomerFilter] = useState('');
+  const [addressFilter, setAddressFilter] = useState('');
+  const [ordersPerPage, setOrdersPerPage] = useState(20);
+  const [activePage, setActivePage] = useState(1);
 
   const isPendingOrder = (order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente';
   const isAssignedOrder = (order) => String(order.estado || order.status || '').toLowerCase() === 'asignado';
@@ -64,9 +71,94 @@ export const AdminDashboard = () => {
   const pendingCount = safeOrders.filter(isPendingOrder).length;
   const availableCount = drivers.filter(isAvailableDriver).length;
 
+  const statusOptions = Array.from(
+    new Set(safeOrders.map((order) => normalizeText(getOrderStatus(order))).filter(Boolean))
+  );
+
+  const allOrders = safeOrders.filter((order) => {
+    const orderStatus = normalizeText(getOrderStatus(order));
+    const orderCustomer = normalizeText(getOrderCustomer(order));
+    const orderAddress = normalizeText(getOrderDestination(order));
+
+    const statusMatches = statusFilter === 'todos' || orderStatus === normalizeText(statusFilter);
+    const customerMatches = !normalizeText(customerFilter) || orderCustomer.includes(normalizeText(customerFilter));
+    const addressMatches = !normalizeText(addressFilter) || orderAddress.includes(normalizeText(addressFilter));
+
+    return statusMatches && customerMatches && addressMatches;
+  });
   const pendingOrders = safeOrders.filter(isPendingOrder);
   const activeOrders = safeOrders.filter(isActiveOrder);
   const assignedOrders = safeOrders.filter(isAssignedOrder);
+
+  const paginateOrders = (orders, currentPage) => {
+    const totalPages = Math.max(1, Math.ceil(orders.length / ordersPerPage));
+    const normalizedPage = Math.min(Math.max(currentPage, 1), totalPages);
+    const startIndex = (normalizedPage - 1) * ordersPerPage;
+    const endIndex = startIndex + ordersPerPage;
+
+    return {
+      page: normalizedPage,
+      totalPages,
+      items: orders.slice(startIndex, endIndex),
+      from: orders.length ? startIndex + 1 : 0,
+      to: orders.length ? Math.min(endIndex, orders.length) : 0,
+      total: orders.length,
+    };
+  };
+
+  const activePagination = paginateOrders(allOrders, activePage);
+
+  useEffect(() => {
+    if (activePage !== activePagination.page) {
+      setActivePage(activePagination.page);
+    }
+  }, [activePage, activePagination.page]);
+
+  useEffect(() => {
+    setActivePage(1);
+  }, [statusFilter, customerFilter, addressFilter, ordersPerPage]);
+
+  const renderPagination = (pagination, setPage) => {
+    if (pagination.total <= ordersPerPage) {
+      return null;
+    }
+
+    return (
+      <div className="orders-pagination">
+        <p>
+          Mostrando {pagination.from}-{pagination.to} de {pagination.total}
+        </p>
+        <div className="orders-pagination-actions">
+          <label className="orders-page-size">
+            Por pagina
+            <select
+              value={ordersPerPage}
+              onChange={(event) => setOrdersPerPage(Number(event.target.value) || 20)}
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="btn-secondary btn-small"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={pagination.page === 1}
+          >
+            Anterior
+          </button>
+          <span>Pagina {pagination.page} de {pagination.totalPages}</span>
+          <button
+            className="btn-secondary btn-small"
+            onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}
+            disabled={pagination.page === pagination.totalPages}
+          >
+            Siguiente
+          </button>
+        </div>
+      </div>
+    );
+  };
   const activeOrdersByDriver = activeOrders.reduce((acc, order) => {
     const driverId = Number(getOrderDriverId(order));
     if (Number.isFinite(driverId)) {
@@ -257,8 +349,18 @@ export const AdminDashboard = () => {
     setIsImporting(true);
     try {
       const result = await importExcelData(selectedFile);
+      const created = result?.created || {};
+      const totalCreated = Object.values(created).reduce((acc, value) => acc + (Number(value) || 0), 0);
+      const createdOrders = Number(created.pedidos) || 0;
       setImportSummary(result);
-      setImportMessage(result.message || 'Importacion completada.');
+      await refreshData();
+      if (createdOrders > 0) {
+        setImportMessage(`Importacion exitosa: se cargaron ${createdOrders} pedidos.`);
+      } else if (totalCreated > 0) {
+        setImportMessage(`Importacion completada: se crearon ${totalCreated} registros.`);
+      } else {
+        setImportMessage(result.message || 'Importacion completada.');
+      }
       setSelectedFile(null);
     } catch (error) {
       setImportError(error.message || 'No se pudo importar el Excel.');
@@ -290,6 +392,13 @@ export const AdminDashboard = () => {
     });
   }, []);
 
+  const createdSummary = importSummary?.created || {};
+  const updatedSummary = importSummary?.updated || {};
+  const createdOrders = Number(createdSummary.pedidos) || 0;
+  const updatedOrders = Number(updatedSummary.pedidos) || 0;
+  const createdClients = Number(createdSummary.clientes) || 0;
+  const updatedClients = Number(updatedSummary.clientes) || 0;
+
   return (
     <div className="dashboard-content">
       <header className="page-header">
@@ -315,10 +424,29 @@ export const AdminDashboard = () => {
             {!!importSummary.sheets_detected?.length && (
               <p>Hojas detectadas: {importSummary.sheets_detected.join(', ')}</p>
             )}
-            <p>Creados: {JSON.stringify(importSummary.created)}</p>
-            <p>Actualizados: {JSON.stringify(importSummary.updated)}</p>
-            {!!importSummary.warnings?.length && <p>Advertencias: {importSummary.warnings.join(' | ')}</p>}
-            {!!importSummary.errors?.length && <p>Errores: {importSummary.errors.join(' | ')}</p>}
+            <p><strong>Resultado:</strong> {createdOrders > 0 ? `Si se cargaron ${createdOrders} pedidos.` : 'No se cargaron pedidos en esta importacion.'}</p>
+            <p>Pedidos: {createdOrders} creados, {updatedOrders} actualizados.</p>
+            <p>Clientes: {createdClients} creados, {updatedClients} actualizados.</p>
+            {!!importSummary.warnings?.length && (
+              <div>
+                <p><strong>Advertencias:</strong></p>
+                <ul>
+                  {importSummary.warnings.map((warning, index) => (
+                    <li key={`warning-${index}`}>{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {!!importSummary.errors?.length && (
+              <div>
+                <p><strong>Errores:</strong></p>
+                <ul>
+                  {importSummary.errors.map((error, index) => (
+                    <li key={`error-${index}`}>{error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </header>
@@ -348,11 +476,43 @@ export const AdminDashboard = () => {
 
       <main className="main-grid mt-4">
         <section className="panel">
-          <h2>Pedidos activos <span className="count">{activeOrders.length}</span></h2>
+          <h2>Pedidos <span className="count">{allOrders.length}</span></h2>
+          <div className="orders-filters">
+            <label>
+              Estado
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="todos">Todos</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Buscar por cliente
+              <input
+                type="text"
+                value={customerFilter}
+                onChange={(event) => setCustomerFilter(event.target.value)}
+                placeholder="Nombre del cliente"
+              />
+            </label>
+            <label>
+              Buscar por dirección
+              <input
+                type="text"
+                value={addressFilter}
+                onChange={(event) => setAddressFilter(event.target.value)}
+                placeholder="Dirección de entrega"
+              />
+            </label>
+          </div>
+          {renderPagination(activePagination, setActivePage)}
+          {assignmentSuccess && <div className="success-message mt-2">{assignmentSuccess}</div>}
           <div className="list-container">
-            {activeOrders.length === 0 ? (
-              <p className="text-muted">No hay pedidos activos</p>
-            ) : activeOrders.map((order) => (
+            {allOrders.length === 0 ? (
+              <p className="text-muted">No hay pedidos que coincidan con el filtro.</p>
+            ) : activePagination.items.map((order) => {
+                return (
               <div key={order.id} className="card">
                 <div className="card-info">
                   <h3>Pedido #{order.id} - {getOrderCustomer(order)}</h3>
@@ -361,29 +521,8 @@ export const AdminDashboard = () => {
                   <p>Ruta: {getOrderRouteId(order) ? `Ruta #${getOrderRouteId(order)}` : 'Sin ruta'} | Orden: {getOrderStopOrder(order) ? `#${getOrderStopOrder(order)}` : 'N/A'}</p>
                   <p>Prioridad: {getOrderPriority(order)} | ETA: {order.tiempo_estimado_desde_anterior_mins || 'N/A'} min</p>
                 </div>
-                <div className={`badge ${getOrderStatus(order).toLowerCase().replace(' ', '-')}`}>
-                  {getOrderStatus(order)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="panel">
-          <h2>Pedidos pendientes <span className="count">{pendingCount}</span></h2>
-          {assignmentSuccess && <div className="success-message mt-2">{assignmentSuccess}</div>}
-          <div className="list-container">
-            {pendingOrders.length === 0 ? (
-              <p className="text-muted">No hay pedidos pendientes</p>
-            ) : (
-              pendingOrders.map((order) => (
-                <div key={order.id} className="card">
-                  <div className="card-info">
-                    <h3>#{order.id} - {getOrderCustomer(order)}</h3>
-                    <p>{getOrderDestination(order)}</p>
-                    <p>Peso: {getOrderWeight(order)} kg | Prioridad: {getOrderPriority(order)}</p>
-                  </div>
-                  <div className="card-actions">
+                <div className="card-actions">
+                  {normalizeText(getOrderStatus(order)) === 'pendiente' && (
                     <button
                       className="btn-small btn-primary"
                       onClick={() => handleOpenManualAssign(order)}
@@ -391,32 +530,14 @@ export const AdminDashboard = () => {
                     >
                       Asignar manualmente
                     </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="panel">
-          <h2>Pedidos asignados <span className="count">{assignedOrders.length}</span></h2>
-          <div className="list-container">
-            {assignedOrders.length === 0 ? (
-              <p className="text-muted">No hay pedidos asignados</p>
-            ) : (
-              assignedOrders.map((order) => (
-                <div key={order.id} className="card">
-                  <div className="card-info">
-                    <h3>#{order.id} - {getOrderCustomer(order)}</h3>
-                    <p>{getOrderDestination(order)}</p>
-                    <p>Repartidor: {getOrderDriverId(order) || 'Asignado'}</p>
-                  </div>
-                  <div className="badge asignado">
+                  )}
+                  <div className={`badge ${getOrderStatus(order).toLowerCase().replace(' ', '-')}`}>
                     {getOrderStatus(order)}
                   </div>
                 </div>
-              ))
-            )}
+              </div>
+                );
+              })}
           </div>
         </section>
 

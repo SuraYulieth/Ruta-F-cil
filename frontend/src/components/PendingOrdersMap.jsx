@@ -6,6 +6,7 @@ const DEFAULT_DRIVER_LOCATION = { lat: 4.711, lng: -74.0721 };
 const MAP_CONTAINER_STYLE = { width: '100%', height: '480px' };
 const ROUTE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
 const UNASSIGNED_COLOR = '#dc2626';
+const MAX_PENDING_MARKERS = 30;
 const MAP_OPTIONS = {
   disableDefaultUI: false,
   fullscreenControl: true,
@@ -88,6 +89,10 @@ export const PendingOrdersMap = ({
       .map((order) => ({ ...order, position: getOrderPosition(order) }))
       .filter((order) => order.position)
   ), [orders]);
+  const visiblePendingOrders = useMemo(
+    () => pendingOrders.slice(0, MAX_PENDING_MARKERS),
+    [pendingOrders]
+  );
   const warehouseMarkers = useMemo(() => (
     warehouses
       .map((warehouse) => ({ ...warehouse, position: getWarehousePosition(warehouse) }))
@@ -237,8 +242,14 @@ export const PendingOrdersMap = ({
     <section className="panel map-panel">
       <div className="panel-title-row">
         <h2>Mapa de ruta</h2>
-        <span className="count">{pendingOrders.length}</span>
+        <span className="count">{visiblePendingOrders.length}</span>
       </div>
+
+      {pendingOrders.length > MAX_PENDING_MARKERS && (
+        <div className="warning-message">
+          Mostrando {MAX_PENDING_MARKERS} de {pendingOrders.length} pedidos pendientes para evitar saturacion del mapa.
+        </div>
+      )}
 
       {!pendingOrders.length && (
         <div className="warning-message">No hay pedidos pendientes con coordenadas para mostrar.</div>
@@ -256,8 +267,16 @@ export const PendingOrdersMap = ({
           >
             <MarkerF
               position={driverPosition}
-              label={{ text: 'R', color: '#ffffff', fontWeight: '700' }}
+              label={{ text: 'R', color: '#0f172a', fontWeight: '700' }}
               title={`Ubicación ${selectedDriver?.name || selectedDriver?.nombre || 'inicial'} del repartidor`}
+              icon={{
+                path: window.google.maps.SymbolPath.CIRCLE,
+                scale: 11,
+                fillColor: '#22c55e',
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 2,
+              }}
               draggable={Boolean(isAdminMode && selectedDriver)}
               onDragEnd={(event) => {
                 if (!onDriverLocationDraftChange) return;
@@ -314,7 +333,7 @@ export const PendingOrdersMap = ({
               />
             ))}
 
-            {pendingOrders.map((order) => {
+            {visiblePendingOrders.map((order) => {
               const stopOrderEntry = stopOrderByPedidoId.get(Number(order.id));
               const routeIndex = selectedOrdersByRoute.get(Number(order.id));
               const isUnassigned = unassignedSet.has(Number(order.id));

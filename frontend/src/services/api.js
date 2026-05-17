@@ -81,9 +81,45 @@ async function request(path, options = {}) {
   return payload;
 }
 
+const isPaginatedPayload = (payload) => (
+  payload
+  && typeof payload === 'object'
+  && Array.isArray(payload.results)
+);
+
+async function fetchPaginatedCollection(path) {
+  const firstPage = await request(path);
+  if (!isPaginatedPayload(firstPage)) {
+    return firstPage;
+  }
+
+  const allResults = [...firstPage.results];
+  let nextPageUrl = firstPage.next;
+
+  while (nextPageUrl) {
+    const response = await fetch(nextPageUrl, {
+      headers: getAuthHeaders(),
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(getErrorMessage(payload) || 'Error al comunicarse con el servidor');
+    }
+
+    if (!isPaginatedPayload(payload)) {
+      break;
+    }
+
+    allResults.push(...payload.results);
+    nextPageUrl = payload.next;
+  }
+
+  return allResults;
+}
+
 export const api = {
   getUsers: () => request('/users/'),
-  getOrders: () => request('/pedidos/'),
+  getOrders: () => fetchPaginatedCollection('/pedidos/'),
   getWarehouses: () => request('/aliados/'),
   getDrivers: () => request('/repartidores/'),
   getDriverDiagnostics: () => request('/repartidores/diagnostics/'),
@@ -142,7 +178,7 @@ export const api = {
       body: formData,
     });
   },
-  getPendingOrders: () => request('/pedidos/').then((orders) => (
+  getPendingOrders: () => api.getOrders().then((orders) => (
     orders.filter((order) => String(order.estado || order.status || '').toLowerCase() === 'pendiente')
   )),
   login: (username, password) => request('/login/', {
