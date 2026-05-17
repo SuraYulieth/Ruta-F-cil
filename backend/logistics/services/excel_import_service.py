@@ -3,7 +3,7 @@ from pathlib import Path
 
 from django.contrib.auth import get_user_model
 
-from logistics.models import Aliado, Cliente, Pedido, Repartidor
+from logistics.models import Aliado, Cliente, Pedido, Repartidor, Ruta, RutaParada
 
 
 SHEET_ALIASES = {
@@ -14,6 +14,10 @@ SHEET_ALIASES = {
     'drivers': 'repartidores',
     'clientes': 'clientes',
     'pedidos': 'pedidos',
+    'datos_rutas': 'pedidos',
+    'datos_ruta': 'pedidos',
+    'rutas': 'pedidos',
+    'ruta': 'pedidos',
 }
 
 
@@ -35,6 +39,7 @@ def import_excel_file(file_path):
         return result
 
     seen_sheets = set()
+    imported_pedidos = []
     for sheet in workbook.worksheets:
         rows = list(_rows_as_dicts(sheet))
         if not rows:
@@ -55,9 +60,14 @@ def import_excel_file(file_path):
                 elif sheet_type == 'clientes':
                     _import_cliente(row, result)
                 elif sheet_type == 'pedidos':
-                    _import_pedido(row, result)
+                    p = _import_pedido(row, result)
+                    if p:
+                        imported_pedidos.append(p)
             except Exception as exc:
                 result['errors'].append(f'Hoja {sheet.title}, fila {index}: {exc}')
+
+    if imported_pedidos:
+        _generate_routes_for_imported_pedidos(imported_pedidos, result)
 
     for expected in ('aliados', 'repartidores', 'clientes', 'pedidos'):
         if expected not in seen_sheets:
@@ -69,7 +79,7 @@ def import_excel_file(file_path):
 def _result(errors=None):
     return {
         'message': 'Importacion completada',
-        'created': {'aliados': 0, 'repartidores': 0, 'clientes': 0, 'pedidos': 0},
+        'created': {'aliados': 0, 'repartidores': 0, 'clientes': 0, 'pedidos': 0, 'rutas': 0},
         'updated': {'aliados': 0, 'repartidores': 0, 'clientes': 0},
         'errors': errors or [],
         'warnings': [],
@@ -135,20 +145,198 @@ def _import_cliente(row, result):
     result['created' if created else 'updated']['clientes'] += 1
 
 
+def _clean_prioridad(val):
+    if not val:
+        return 'normal'
+    val_lower = str(val).strip().lower()
+    if val_lower in ('baja', 'low'):
+        return 'baja'
+    if val_lower in ('media', 'normal', 'medium', 'medio'):
+        return 'normal'
+    if val_lower in ('alta', 'high'):
+        return 'alta'
+    if val_lower in ('urgente', 'critical', 'urgent'):
+        return 'urgente'
+    return 'normal'
+
+
+def _find_repartidor(row):
+    repartidor_name = _value(row, 'repartidor', 'driver', 'conductor', 'repartidor_username', 'driver_username', default=None)
+    if not repartidor_name:
+        return None
+    
+    repartidor_name = str(repartidor_name).strip()
+    User = get_user_model()
+    # Search by username (exact)
+    user = User.objects.filter(role='driver', username__iexact=repartidor_name).first()
+    if not user:
+        # Search by nombre (contains)
+        user = User.objects.filter(role='driver', nombre__icontains=repartidor_name).first()
+    return user
+
+
 def _import_pedido(row, result):
     cliente, client_created = _upsert_cliente(row)
     if client_created:
         result['created']['clientes'] += 1
-    Pedido.objects.create(
+    
+    repartidor = _find_repartidor(row)
+    estado = _value(row, 'estado', 'status', default='Pendiente')
+    if repartidor and estado == 'Pendiente':
+        estado = 'Asignado'
+        
+    pedido = Pedido.objects.create(
         cliente=cliente,
         aliado=_find_aliado(row),
+        repartidor=repartidor,
         descripcion=_value(row, 'descripcion', 'description', default=''),
-        estado=_value(row, 'estado', 'status', default='Pendiente'),
-        prioridad=_value(row, 'prioridad', 'priority', default='normal'),
+        estado=estado,
+        prioridad=_clean_prioridad(_value(row, 'prioridad', 'priority', default='normal')),
         peso_total_kg=_decimal(row, 'peso_total_kg', 'peso', 'weightkg', default=0),
         volumen_total_m3=_decimal(row, 'volumen_total_m3', 'volumen', default=None),
     )
     result['created']['pedidos'] += 1
+    return pedido
+
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    radius_km = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return radius_km * c
+
+
+def _generate_routes_for_imported_pedidos(pedidos, result):
+    from django.db import transaction
+    from collections import defaultdict
+    from decimal import Decimal
+    from logistics.models import Ruta, RutaParada, Repartidor
+
+    # Group orders that have a driver assigned
+    by_driver = defaultdict(list)
+    for p in pedidos:
+        if p.repartidor_id:
+            by_driver[p.repartidor].append(p)
+
+    if not by_driver:
+        return
+
+    result['created']['rutas'] = 0
+
+    with transaction.atomic():
+        for driver, driver_pedidos in by_driver.items():
+            # Get driver start location
+            profile = Repartidor.objects.filter(user=driver).first()
+            if profile and profile.latitud_actual is not None and profile.longitud_actual is not None:
+                start_lat = float(profile.latitud_actual)
+                start_lng = float(profile.longitud_actual)
+            else:
+                # Use centroid or first order
+                first_order = driver_pedidos[0]
+                start_lat = float(first_order.cliente.latitud or 4.7110)
+                start_lng = float(first_order.cliente.longitud or -74.0721)
+
+            # Sort orders using nearest neighbor
+            remaining = list(driver_pedidos)
+            current_lat = start_lat
+            current_lng = start_lng
+            ordered_stops = []
+            total_distance = 0.0
+
+            while remaining:
+                # Find nearest order
+                next_order = min(
+                    remaining,
+                    key=lambda p: haversine_km(
+                        current_lat,
+                        current_lng,
+                        float(p.cliente.latitud or current_lat),
+                        float(p.cliente.longitud or current_lng),
+                    )
+                )
+                next_lat = float(next_order.cliente.latitud or current_lat)
+                next_lng = float(next_order.cliente.longitud or current_lng)
+                leg_distance = haversine_km(current_lat, current_lng, next_lat, next_lng)
+                total_distance += leg_distance
+
+                ordered_stops.append({
+                    'pedido': next_order,
+                    'lat': next_lat,
+                    'lng': next_lng,
+                    'distance': leg_distance,
+                })
+                current_lat = next_lat
+                current_lng = next_lng
+                remaining.remove(next_order)
+
+            # Estimate duration (average speed 28 km/h, 4 mins service time per stop)
+            travel_mins = (total_distance / 28.0) * 60
+            service_mins = len(ordered_stops) * 4
+            total_duration_mins = int(math.ceil(travel_mins + service_mins))
+
+            # Build geometry
+            geometry = {
+                'type': 'LineString',
+                'coordinates': [[start_lng, start_lat]] + [
+                    [stop['lng'], stop['lat']] for stop in ordered_stops
+                ],
+            }
+
+            # Create Route
+            aliado = driver_pedidos[0].aliado
+            route = Ruta.objects.create(
+                repartidor=driver,
+                aliado=aliado,
+                latitud_inicio=Decimal(str(round(start_lat, 8))),
+                longitud_inicio=Decimal(str(round(start_lng, 8))),
+                tiempo_estimado_mins=total_duration_mins,
+                distancia_km=Decimal(str(round(total_distance, 2))),
+                capacidad_usada_kg=Decimal(str(round(sum(float(p.peso_total_kg or 0) for p in driver_pedidos), 2))),
+                estado_ruta='asignada',
+                geometria=geometry,
+                decision_ai={
+                    'explicacion': f'Ruta de Excel generada automáticamente para {driver.nombre}. Total {len(driver_pedidos)} pedidos.',
+                    'metrics': {
+                        'distancia_total_km': round(total_distance, 2),
+                        'tiempo_estimado_mins': total_duration_mins,
+                        'eficiencia': 'Alta'
+                    }
+                }
+            )
+
+            # Create stops
+            for index, stop in enumerate(ordered_stops, start=1):
+                p = stop['pedido']
+                # Calculate duration for this leg
+                leg_travel_mins = (stop['distance'] / 28.0) * 60
+                leg_duration = int(math.ceil(leg_travel_mins))
+
+                RutaParada.objects.create(
+                    ruta=route,
+                    pedido=p,
+                    orden=index,
+                    latitud=Decimal(str(round(stop['lat'], 8))),
+                    longitud=Decimal(str(round(stop['lng'], 8))),
+                    distancia_desde_anterior_km=Decimal(str(round(stop['distance'], 2))),
+                    tiempo_estimado_desde_anterior_mins=leg_duration,
+                    estado='pendiente'
+                )
+
+                # Set order state to 'Asignado'
+                p.repartidor = driver
+                p.estado = 'Asignado'
+                p.save(update_fields=['repartidor', 'estado'])
+
+            # Set driver state to 'Ocupado'
+            driver.estado = 'Ocupado'
+            driver.save(update_fields=['estado'])
+
+            result['created']['rutas'] += 1
 
 
 def _upsert_user(username, nombre, role, estado='Disponible'):

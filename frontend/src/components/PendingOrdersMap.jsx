@@ -51,6 +51,12 @@ const getGoogleMapsApiKey = () => (
   || ''
 ).trim().replace(/^["']|["']$/g, '');
 
+const getGoogleMapsMapId = () => (
+  import.meta.env.VITE_GOOGLE_MAPS_MAP_ID
+  || import.meta.env.VITE_GOOGLE_MAPS_ID
+  || ''
+).trim().replace(/^["']|["']$/g, '');
+
 export const PendingOrdersMap = ({
   orders,
   selectedOrderIds = [],
@@ -62,6 +68,7 @@ export const PendingOrdersMap = ({
 }) => {
   const [activeOrder, setActiveOrder] = useState(null);
   const apiKey = getGoogleMapsApiKey();
+  const mapId = getGoogleMapsMapId();
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'ruta-facil-google-maps',
@@ -130,7 +137,10 @@ export const PendingOrdersMap = ({
             mapContainerStyle={MAP_CONTAINER_STYLE}
             center={driverPosition}
             zoom={14}
-            options={MAP_OPTIONS}
+            options={{
+              ...MAP_OPTIONS,
+              mapId: mapId || undefined,
+            }}
           >
             <MarkerF
               position={driverPosition}

@@ -204,6 +204,109 @@ class RutaViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @action(detail=False, methods=['post'], url_path='optimize-batch')
+    def optimize_batch(self, request):
+        """
+        Algoritmo de Optimización en Lote (Batch Routing)
+        Complejidad: O(K * M log M) donde K es el número de conductores y M el de pedidos.
+        """
+        drivers = CustomUser.objects.filter(role='driver', estado='Disponible')
+        pending_orders = Pedido.objects.filter(estado='Pendiente')
+
+        if not drivers.exists():
+            return Response(
+                {"error": "No hay repartidores disponibles para realizar la optimización en lote."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not pending_orders.exists():
+            return Response(
+                {"error": "No hay pedidos pendientes para optimizar."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        created_routes = []
+        remaining_order_ids = list(pending_orders.values_list('id', flat=True))
+        optimizer = RouteOptimizerService()
+
+        # Iterar sobre los conductores disponibles
+        for driver in drivers:
+            if not remaining_order_ids:
+                break
+
+            # Obtener ubicación inicial del conductor
+            profile = Repartidor.objects.filter(user=driver).first()
+            lat_init = float(profile.latitud_actual) if profile and profile.latitud_actual is not None else 4.7110
+            lng_init = float(profile.longitud_actual) if profile and profile.longitud_actual is not None else -74.0721
+
+            # Ejecutar optimización individual con el conjunto restante de pedidos
+            result = optimizer.optimize(
+                repartidor_id=driver.id,
+                latitud_inicial=lat_init,
+                longitud_inicial=lng_init,
+                pedidos_candidatos=remaining_order_ids,
+                capacidad_maxima=float(profile.capacidad_maxima_kg) if profile else 15.0,
+                reglas_negocio={'max_orders': 6}
+            )
+
+            # Si no se seleccionó ningún pedido para este conductor, continuamos con el siguiente
+            if not result['pedidos_seleccionados']:
+                continue
+
+            decision = AiRouteDecisionService().explain(result)
+            metrics = RouteMetricsService().build(result)
+
+            with transaction.atomic():
+                # Crear la ruta
+                route = Ruta.objects.create(
+                    repartidor=driver,
+                    aliado=Aliado.objects.filter(id=result.get('aliado_id')).first(),
+                    latitud_inicio=to_decimal(result['start']['lat']),
+                    longitud_inicio=to_decimal(result['start']['lng']),
+                    tiempo_estimado_mins=result['duracion_total_mins'],
+                    distancia_km=result['distancia_total_km'],
+                    capacidad_usada_kg=result['capacidad_usada_kg'],
+                    geometria=result['geometria'],
+                    decision_ai={**decision, 'metrics': metrics},
+                )
+
+                # Crear las paradas
+                for index, stop in enumerate(result['orden_entrega'], start=1):
+                    p = stop['pedido']
+                    if p.aliado_id:
+                        p.save(update_fields=['aliado'])
+
+                    RutaParada.objects.create(
+                        ruta=route,
+                        pedido=p,
+                        orden=index,
+                        latitud=to_decimal(stop['lat']),
+                        longitud=to_decimal(stop['lng']),
+                        distancia_desde_anterior_km=stop['distancia_desde_anterior_km'],
+                        tiempo_estimado_desde_anterior_mins=stop['tiempo_estimado_desde_anterior_mins'],
+                    )
+
+                    # Asignar pedido al repartidor
+                    p.repartidor = driver
+                    p.estado = 'Asignado'
+                    p.save(update_fields=['repartidor', 'estado'])
+
+                # Marcar conductor como Ocupado
+                driver.estado = 'Ocupado'
+                driver.save(update_fields=['estado'])
+
+            # Añadir a la lista de rutas creadas
+            created_routes.append(RutaSerializer(route).data)
+
+            # Quitar los pedidos asignados de la lista de pendientes
+            assigned_ids = {p.id for p in result['pedidos_seleccionados']}
+            remaining_order_ids = [pid for pid in remaining_order_ids if pid not in assigned_ids]
+
+        return Response({
+            "mensaje": f"Optimización en lote completada con éxito. Se generaron {len(created_routes)} rutas.",
+            "rutas_creadas": created_routes,
+            "pedidos_restantes": len(remaining_order_ids)
+        }, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['get'], url_path='evidence')
     def evidence(self, request, pk=None):
         route = self.get_object()

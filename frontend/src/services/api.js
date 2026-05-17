@@ -95,4 +95,7 @@ export const api = {
     method: 'PATCH',
     body: JSON.stringify({ estado_ruta: status }),
   }),
+  optimizeBatch: () => request('/routes/optimize-batch/', {
+    method: 'POST',
+  }),
 };

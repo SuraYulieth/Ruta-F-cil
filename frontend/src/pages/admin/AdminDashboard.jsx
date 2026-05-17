@@ -4,7 +4,7 @@ import { RouteOptimizerPanel } from '../../components/RouteOptimizerPanel';
 import { useAppContext } from '../../context/AppContext';
 
 export const AdminDashboard = () => {
-  const { orders, warehouses, getDrivers, assignOrders, refreshData, importExcelData, loading } = useAppContext();
+  const { orders, warehouses, getDrivers, assignOrders, refreshData, importExcelData, optimizeBatchRoutes, loading } = useAppContext();
   const [isAssigning, setIsAssigning] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -22,6 +22,26 @@ export const AdminDashboard = () => {
     setIsAssigning(true);
     await assignOrders();
     setIsAssigning(false);
+  };
+
+  const handleBatchOptimize = async () => {
+    setIsAssigning(true);
+    setImportError('');
+    setImportMessage('');
+    try {
+      const result = await optimizeBatchRoutes();
+      setImportMessage(result.mensaje || 'Optimización en lote completada con éxito.');
+      setImportSummary({
+        created: { rutas: result.rutas_creadas?.length || 0 },
+        updated: {},
+        warnings: [],
+        errors: []
+      });
+    } catch (error) {
+      setImportError(error.message || 'No se pudo realizar la optimización en lote.');
+    } finally {
+      setIsAssigning(false);
+    }
   };
 
   const handleRefreshImportedData = async () => {
@@ -79,11 +99,38 @@ export const AdminDashboard = () => {
         {importMessage && <div className="success-message mt-4">{importMessage}</div>}
         {importError && <div className="error-message mt-4">{importError}</div>}
         {importSummary && (
-          <div className="import-summary">
-            <p>Creados: {JSON.stringify(importSummary.created)}</p>
-            <p>Actualizados: {JSON.stringify(importSummary.updated)}</p>
-            {!!importSummary.warnings?.length && <p>Advertencias: {importSummary.warnings.join(' | ')}</p>}
-            {!!importSummary.errors?.length && <p>Errores: {importSummary.errors.join(' | ')}</p>}
+          <div className="import-summary panel mt-4" style={{ padding: '1.5rem', background: 'rgba(56, 189, 248, 0.05)', borderColor: 'rgba(56, 189, 248, 0.2)' }}>
+            <h3 style={{ fontSize: '1.2rem', marginBottom: '1rem', color: 'var(--accent-neon)' }}>Resumen de importación / optimización</h3>
+            <div className="metric-grid">
+              <div className="metric">
+                <span>Clientes creados</span>
+                <strong>{importSummary.created?.clientes || 0}</strong>
+              </div>
+              <div className="metric">
+                <span>Pedidos creados</span>
+                <strong>{importSummary.created?.pedidos || 0}</strong>
+              </div>
+              <div className="metric">
+                <span>Rutas auto-creadas</span>
+                <strong>{importSummary.created?.rutas || 0}</strong>
+              </div>
+            </div>
+            {!!importSummary.warnings?.length && (
+              <div className="warning-message mt-4">
+                <strong>Advertencias:</strong>
+                <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
+                  {importSummary.warnings.map((w, idx) => <li key={idx}>{w}</li>)}
+                </ul>
+              </div>
+            )}
+            {!!importSummary.errors?.length && (
+              <div className="error-message mt-4">
+                <strong>Errores:</strong>
+                <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
+                  {importSummary.errors.map((e, idx) => <li key={idx}>{e}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </header>
@@ -139,13 +186,20 @@ export const AdminDashboard = () => {
             ))}
           </div>
 
-          <div className="actions">
+          <div className="actions split-actions mt-4">
             <button
-              className="btn-primary"
+              className="btn-secondary"
               onClick={handleAssignOrders}
               disabled={isAssigning || pendingCount === 0 || availableCount === 0}
             >
-              {isAssigning ? 'Procesando...' : 'Asignacion simple heredada'}
+              {isAssigning ? 'Procesando...' : 'Asignación simple'}
+            </button>
+            <button
+              className="btn-primary"
+              onClick={handleBatchOptimize}
+              disabled={isAssigning || pendingCount === 0 || availableCount === 0}
+            >
+              {isAssigning ? 'Optimizando...' : 'Optimización en Lote'}
             </button>
           </div>
         </section>

@@ -132,6 +132,12 @@ export const AppProvider = ({ children }) => {
     return route;
   };
 
+  const optimizeBatchRoutes = async () => {
+    const result = await api.optimizeBatch();
+    await fetchData();
+    return result;
+  };
+
   return (
     <AppContext.Provider value={{
       users,
@@ -156,6 +162,7 @@ export const AppProvider = ({ children }) => {
       assignOptimizedRoute,
       updateRouteStatus,
       refreshData,
+      optimizeBatchRoutes,
     }}>
       {children}
     </AppContext.Provider>
